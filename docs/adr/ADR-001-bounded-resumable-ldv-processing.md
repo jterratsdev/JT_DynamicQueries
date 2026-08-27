@@ -3,7 +3,7 @@
 # ADR-001: Bounded, Resumable Large-Data-Volume (LDV) Processing
 
 **Author:** Salesforce Servicios Profesionales
-**Version:** 1.8
+**Version:** 1.9
 **Status:** Proposed — awaiting developer sign-off before implementation
 **Related:** GitHub Issue #43
 **API Version Target:** 67.0 (per `sfdx-project.json` → `sourceApiVersion`)
@@ -594,10 +594,19 @@ should land before the chained Queueable is exposed to end users).
    with a full E2E re-run, not a rushed cutover appended to the backend contract's first
    pass. The "operation in progress" polling/progress/Cancel state deferred from sub-PR 2
    remains deferred until that cutover happens.
-5. **Streaming CSV/JSON export.** Rework export to request bounded pages via the same
-   forward-pagination contract from sub-PR 4, writing output incrementally rather than
-   from one retained in-memory collection. **UI:** replaces instant-download-on-click with
-   the same background-generate-then-notify pattern introduced in sub-PR 2.
+5. **Streaming CSV/JSON export — backend need already satisfied, UI deferred.** This sub-PR
+   has no Apex work of its own: `JT_QueryViewerController.getQueryResultsPage` (sub-PR 4)
+   already gives a caller everything needed to request bounded pages and build CSV/JSON
+   incrementally instead of from one retained in-memory collection. Confirmed
+   `jtQueryResults.js`'s current `generateCSV()`/JSON view build entirely client-side from
+   `_records` (an already-fully-loaded array) with **zero existing Jest or E2E test
+   coverage** for export - unlike sub-PR 3/4's changes, there is no safety net to verify a
+   change to this working path against. Given that gap and that this item is an efficiency
+   improvement rather than a correctness/security fix (unlike sub-PRs 1–3), it is grouped
+   with sub-PR 4's deferred UI cutover: both replace "load everything, then act on the
+   in-memory copy" with "fetch bounded pages on demand," and should land together once that
+   cutover gets its own dedicated pass (and ideally a Jest harness for `jtQueryResults`,
+   which doesn't exist for any component in this codebase yet - see sub-PR 6 doc note).
 6. **Doc corrections.** Update ApexDoc on `JT_DataSelector`/`JT_QueryViewerController`,
    `docs/README.md`, `docs/architecture/diagrams.md`, and `docs/TECH_DEBT.md` to correctly
    distinguish UI pagination, server pagination, Batch Apex, Queueable Apex, and Apex
