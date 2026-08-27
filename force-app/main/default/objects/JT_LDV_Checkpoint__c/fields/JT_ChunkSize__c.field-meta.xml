@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_ChunkSize__c</fullName>
-    <description>Bounded Cursor.fetch() size used for this operation.</description>
+    <description
+  >Bounded Cursor.fetch() size used for this operation.</description>
     <externalId>false</externalId>
     <label>Chunk Size</label>
     <precision>18</precision>

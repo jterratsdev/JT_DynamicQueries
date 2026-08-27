@@ -2049,4 +2049,81 @@ private class JT_QueryViewerController_Test {
       'Datetime should be formatted as ISO string containing the year'
     );
   }
+
+  /**
+   * @description startLdvBulkOperation must return an operation id whose
+   * chained queueable(s) run to completion within the same Test.stopTest() flush.
+   */
+  @IsTest
+  static void testStartLdvBulkOperationCompletesAndIsPollable() {
+    insert new Account(Name = 'Test Account');
+
+    Test.startTest();
+    String operationId = JT_QueryViewerController.startLdvBulkOperation(
+      'Test_Record',
+      JSON.serialize(new Map<String, Object>{ 'name' => 'Test Account' }),
+      200,
+      'JT_LdvCountingProcessor'
+    );
+    Test.stopTest();
+
+    JT_QueryViewerController.LdvOperationStatus status = JT_QueryViewerController.getLdvOperationStatus(
+      operationId
+    );
+    Assert.areEqual(
+      'Completed',
+      status.status,
+      'A small operation should complete within the chained queueable run triggered by Test.stopTest()'
+    );
+  }
+
+  /**
+   * @description cancelLdvOperation must never overwrite a terminal Completed status.
+   */
+  @IsTest
+  static void testCancelLdvOperationIsNoOpOnCompletedOperation() {
+    insert new Account(Name = 'Test Account');
+
+    Test.startTest();
+    String operationId = JT_QueryViewerController.startLdvBulkOperation(
+      'Test_Record',
+      JSON.serialize(new Map<String, Object>{ 'name' => 'Test Account' }),
+      200,
+      'JT_LdvCountingProcessor'
+    );
+    Test.stopTest();
+
+    JT_QueryViewerController.cancelLdvOperation(operationId);
+
+    JT_QueryViewerController.LdvOperationStatus status = JT_QueryViewerController.getLdvOperationStatus(
+      operationId
+    );
+    Assert.areEqual(
+      'Completed',
+      status.status,
+      'Cancelling an already-Completed operation must not overwrite its terminal status'
+    );
+  }
+
+  /**
+   * @description getLdvOperationStatus must fail loudly for an unknown operation id rather
+   * than silently returning a blank/default status.
+   */
+  @IsTest
+  static void testGetLdvOperationStatusThrowsForUnknownOperationId() {
+    Boolean threwAuraHandledException = false;
+
+    Test.startTest();
+    try {
+      JT_QueryViewerController.getLdvOperationStatus('does-not-exist');
+    } catch (AuraHandledException e) {
+      threwAuraHandledException = true;
+    }
+    Test.stopTest();
+
+    Assert.isTrue(
+      threwAuraHandledException,
+      'getLdvOperationStatus should throw AuraHandledException for an unknown operation id'
+    );
+  }
 }

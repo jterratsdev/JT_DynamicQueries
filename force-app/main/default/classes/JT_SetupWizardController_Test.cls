@@ -303,7 +303,7 @@ private class JT_SetupWizardController_Test {
 
   /**
    * @description The optional LDV checkpoint purge step must never block allStepsComplete,
-   * even when no CronTrigger is scheduled (ADR-001 §3/§7 - manual admin step).
+   * even when no CronTrigger is scheduled - scheduling it is a manual admin step.
    */
   @IsTest
   static void testCheckCompleteSetupLdvPurgeStepIsOptionalAndDoesNotBlock() {

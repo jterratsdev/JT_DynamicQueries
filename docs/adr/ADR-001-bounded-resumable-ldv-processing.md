@@ -3,7 +3,7 @@
 # ADR-001: Bounded, Resumable Large-Data-Volume (LDV) Processing
 
 **Author:** Salesforce Servicios Profesionales
-**Version:** 1.4
+**Version:** 1.5
 **Status:** Proposed — awaiting developer sign-off before implementation
 **Related:** GitHub Issue #43
 **API Version Target:** 65.0 (per `sfdx-project.json` → `sourceApiVersion`)
@@ -446,6 +446,20 @@ sequenceDiagram
 
 ### Complications found during investigation (things that make the issue's ask harder than it reads)
 
+- **Live verification of `JT_LDV_Checkpoint__c`'s non-required fields is currently blocked by
+  a platform inconsistency, unrelated to this ADR's design.** Deploying the object's
+  non-required custom fields consistently reports `created=true` from the Metadata API across
+  three independently-tested orgs (two fresh scratch orgs and a long-lived real Developer
+  Edition org), but the fields are absent from `sobject describe`, SOQL execution, and even
+  Anonymous Apex compilation immediately afterward — while already-deployed Apex *classes*
+  referencing the same fields continue to compile and deploy successfully. Ruled out as causes:
+  FLS/permission-set assignment (`AccessLevel.SYSTEM_MODE` still fails to compile in Anonymous
+  Apex), propagation delay (persists past 90+ seconds), and "too many fields in one deploy"
+  (reproduces for a single incremental field added to an already-working object). Sub-PRs 1–2
+  are implemented and pass PMD/compile checks, but `sf apex run test` could not be run
+  successfully end-to-end against the full checkpoint schema in any tested environment during
+  this work. Re-verify with `sf apex run test` once this resolves (possibly a Salesforce
+  support case) before considering sub-PRs 1–2 fully proven in a live org.
 - **No native Apex Query Plan API.** The issue asks for "Query Plan/selectivity evidence
   independently of record count," but Apex exposes no such method — only the Tooling/REST
   `/query/explain` HTTP endpoint. This forces a callout dependency into what was previously
@@ -515,13 +529,23 @@ should land before the chained Queueable is exposed to end users).
    `CONTRIBUTING.md` section documenting the manual scheduling step, and the Setup Wizard
    UI prompt recommending it — this documentation is part of this sub-PR's definition of
    done, not a follow-up.
-2. **Chained Queueable execution + retry/backoff.** Add `JT_LdvCursorQueueable`,
-   `System.Finalizer`-based retry with backoff, idempotent re-enqueue keyed by
-   `JT_OperationId__c`. Wire `JT_QueryViewerController.executeQueryWithBatchProcessing` (or
-   its replacement) to enqueue instead of looping in one transaction. **UI:** ships the new
-   "operation in progress" state in `jtQueryViewer` — polling/progress indicator against
-   the checkpoint and a working Cancel action (see UI impact §7); without this, the LWC
-   would await a synchronous response that no longer arrives.
+2. **Chained Queueable execution + retry/backoff.** Added `JT_LdvCursorQueueable` +
+   `JT_LdvCursorFinalizer` (`System.Finalizer`-based retry with backoff, fail-closed on
+   exhaustion) + `JT_DataSelector.startCursorOperation`, driven entirely by
+   `JT_LDV_Checkpoint__c` and re-opening `Database.getCursorWithBinds` fresh each chunk (a
+   `Database.Cursor` instance cannot itself be persisted across transactions). Exposed via new
+   `JT_QueryViewerController.startLdvBulkOperation`/`getLdvOperationStatus`/
+   `cancelLdvOperation` methods, kept **additive** alongside the existing
+   `executeQueryWithBatchProcessing` rather than replacing it: that method still returns a
+   complete result synchronously (real Cursor as of sub-PR 1, still one transaction), which is
+   the only result-consuming path today's UI has. Chained async processing has no way to
+   deliver its records back to `jtQueryViewer` for on-screen browsing until sub-PR 4's
+   pagination contract exists, so it is scoped here to what a caller-supplied
+   `CursorProcessor` can do on its own per chunk (export/integration side effects) - not to
+   interactive result display. **UI deferred to sub-PR 4:** the "operation in progress"
+   polling/progress/Cancel state only has something real to wire into once results can be
+   paginated back to the client; building it against this sub-PR's plumbing now would mean
+   reworking it again once sub-PR 4 lands.
 3. **Fail-closed count/risk gating + bind-safe count contract.** Introduce
    `JT_WorkloadContract`, replace `countRecordsInternal`'s regex+literal-interpolation with
    `Database.countQueryWithBinds`, remove the fail-open catch block in
@@ -533,8 +557,10 @@ should land before the chained Queueable is exposed to end users).
 4. **GraphQL-style forward pagination in `jtQueryResults`.** Replace `Array.slice` over a
    fully-loaded `_records` with `{first, after, hasNextPage, endCursor}` calls into the
    controller, backed by the checkpoint/cursor infrastructure from sub-PR 1–2. **UI:** low
-   risk — today's Previous/Next-only controls map directly; add a client-side visited-cursor
-   stack to recover "Previous" (see UI impact §7).
+   risk for pagination itself — today's Previous/Next-only controls map directly; add a
+   client-side visited-cursor stack to recover "Previous" (see UI impact §7). Also picks up
+   the "operation in progress" polling/progress/Cancel state deferred from sub-PR 2, since
+   this is the first point where `jtQueryViewer` has bounded pages to actually display.
 5. **Streaming CSV/JSON export.** Rework export to request bounded pages via the same
    forward-pagination contract from sub-PR 4, writing output incrementally rather than
    from one retained in-memory collection. **UI:** replaces instant-download-on-click with

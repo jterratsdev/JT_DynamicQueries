@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_CursorPosition__c</fullName>
-    <description>Next Cursor.fetch(position, size) offset for this operation.</description>
+    <description
+  >Next Cursor.fetch(position, size) offset for this operation.</description>
     <externalId>false</externalId>
     <label>Cursor Position</label>
     <precision>18</precision>

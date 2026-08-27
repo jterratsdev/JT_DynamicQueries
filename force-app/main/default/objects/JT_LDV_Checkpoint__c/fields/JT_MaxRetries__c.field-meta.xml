@@ -2,7 +2,8 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_MaxRetries__c</fullName>
     <defaultValue>3</defaultValue>
-    <description>Bound for transient-retry/backoff attempts before this operation fails closed.</description>
+    <description
+  >Bound for transient-retry/backoff attempts before this operation fails closed.</description>
     <externalId>false</externalId>
     <label>Max Retries</label>
     <precision>18</precision>

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_ConfigDevName__c</fullName>
-    <description>JT_DynamicQueryConfiguration__mdt.DeveloperName being executed by this operation.</description>
+    <description
+  >JT_DynamicQueryConfiguration__mdt.DeveloperName being executed by this operation.</description>
     <externalId>false</externalId>
     <label>Config Developer Name</label>
     <length>255</length>

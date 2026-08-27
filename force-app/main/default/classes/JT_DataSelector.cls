@@ -192,6 +192,17 @@ public inherited sharing class JT_DataSelector {
   }
 
   /**
+   * @description Returns a configuration's base SOQL for callers outside this class that only
+   * need the query text - e.g. JT_LdvCursorQueueable re-opening a Database.Cursor for a chunk
+   * of a chained LDV operation it did not originally start.
+   * @param devName Configuration developer name
+   * @return String The configuration's JT_BaseQuery__c
+   */
+  public static String getBaseQuery(String devName) {
+    return JT_DataSelector.getInstance().getConfig(devName).JT_BaseQuery__c;
+  }
+
+  /**
    * @description instance method to get the config with caching optimization
    * @param devName
    * @author Jaime Terrats | 06-18-2025
@@ -990,8 +1001,8 @@ public inherited sharing class JT_DataSelector {
   /**
    * @description Process large query results using a real Apex Database.Cursor,
    * fetched in bounded chunks and tracked via a JT_LDV_Checkpoint__c row.
-   * Still invoked synchronously in a single transaction (see ADR-001 sub-PR 1) -
-   * multi-transaction chaining/resumption lands in a later sub-PR.
+   * Still invoked synchronously in a single transaction - multi-transaction chaining and
+   * resumption is handled separately by JT_LdvCursorQueueable.
    * @param params CursorProcessingParams object containing all parameters
    * @return Integer Total number of records processed
    * @see https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_SOQL_cursors.htm
@@ -1064,6 +1075,73 @@ public inherited sharing class JT_DataSelector {
     }
 
     return totalProcessed;
+  }
+
+  /**
+   * @description Starts a chained, multi-transaction LDV cursor operation.
+   * Persists a checkpoint and returns it WITHOUT fetching any records - JT_LdvCursorQueueable
+   * performs the actual chunked fetch/processing, one bounded chunk per transaction.
+   * @param devName Configuration developer name
+   * @param bindings Custom bindings
+   * @param enforceSecurity Whether chunks should query in USER_MODE (true) or SYSTEM_MODE (false)
+   * @param batchSize Bounded fetch size per chunk (default 200)
+   * @param processorTypeName Fully-qualified JT_DataSelector.CursorProcessor implementation with
+   * a public no-arg constructor - re-instantiated once per chunk since instances cannot be
+   * serialized across Queueable transactions
+   * @return JT_LDV_Checkpoint__c The persisted checkpoint (status Pending, position 0)
+   */
+  public static JT_LDV_Checkpoint__c startCursorOperation(
+    String devName,
+    Map<String, Object> bindings,
+    Boolean enforceSecurity,
+    Integer batchSize,
+    String processorTypeName
+  ) {
+    final JT_DataSelector selectorInstance = JT_DataSelector.getInstance();
+    final JT_DynamicQueryConfiguration__mdt config = selectorInstance.getConfig(
+      devName
+    );
+
+    Map<String, Object> configBindings = getConfigBindings(config);
+    Map<String, Object> mergedBindings = mergeBindings(
+      configBindings,
+      bindings
+    );
+
+    AccessLevel accessMode = getAccessLevel(enforceSecurity);
+    Integer effectiveBatchSize = batchSize != null && batchSize > 0
+      ? batchSize
+      : 200;
+
+    Database.Cursor cursor = Database.getCursorWithBinds(
+      config.JT_BaseQuery__c,
+      mergedBindings,
+      accessMode
+    );
+    Integer totalSize = cursor.getNumRecords();
+
+    Map<String, Object> persistedState = new Map<String, Object>{
+      'bindings' => mergedBindings,
+      'enforceSecurity' => enforceSecurity
+    };
+
+    JT_LDV_Checkpoint__c checkpoint = new JT_LDV_Checkpoint__c(
+      JT_OperationId__c = generateOperationId(),
+      JT_ConfigDevName__c = devName,
+      JT_BindingsJson__c = JSON.serialize(persistedState),
+      JT_ChunkSize__c = effectiveBatchSize,
+      JT_CursorPosition__c = 0,
+      JT_RecordsProcessed__c = 0,
+      JT_TotalRecordCount__c = totalSize,
+      JT_Status__c = 'Pending',
+      JT_RetryCount__c = 0,
+      JT_MaxRetries__c = 3,
+      JT_ProcessorClass__c = processorTypeName,
+      JT_InitiatedBy__c = UserInfo.getUserId(),
+      JT_StartedAt__c = System.now()
+    );
+    Database.insert(checkpoint, AccessLevel.SYSTEM_MODE);
+    return checkpoint;
   }
 
   /**

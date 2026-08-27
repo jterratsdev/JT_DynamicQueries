@@ -2,7 +2,8 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_RetryCount__c</fullName>
     <defaultValue>0</defaultValue>
-    <description>Current transient-retry attempt count for this operation.</description>
+    <description
+  >Current transient-retry attempt count for this operation.</description>
     <externalId>false</externalId>
     <label>Retry Count</label>
     <precision>18</precision>

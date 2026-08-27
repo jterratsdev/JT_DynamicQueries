@@ -1,7 +1,7 @@
 /**
  * @description Deletes Completed/Failed JT_LDV_Checkpoint__c rows older than the configured
  * retention window (JT_DynamicQuerySettings__c.JT_LdvCheckpointRetentionDays__c, default 30
- * days). Scheduling this job is a manual admin step - see CONTRIBUTING.md (ADR-001 §3/§7).
+ * days). Scheduling this job is a manual admin step - see CONTRIBUTING.md.
  * @author Jaime Terrats
  * @group Batch Apex
  */
@@ -27,8 +27,9 @@ public without sharing class JT_LdvCheckpointPurgeBatch implements Database.Batc
       [
         SELECT Id
         FROM JT_LDV_Checkpoint__c
-        WHERE JT_Status__c IN ('Completed', 'Failed')
-        AND LastModifiedDate < :cutoff
+        WHERE
+          JT_Status__c IN ('Completed', 'Failed')
+          AND LastModifiedDate < :cutoff
       ]
     );
   }
@@ -38,7 +39,10 @@ public without sharing class JT_LdvCheckpointPurgeBatch implements Database.Batc
    * @param context BatchableContext provided by the platform
    * @param scope Checkpoint rows for this batch chunk
    */
-  public void execute(Database.BatchableContext context, List<JT_LDV_Checkpoint__c> scope) {
+  public void execute(
+    Database.BatchableContext context,
+    List<JT_LDV_Checkpoint__c> scope
+  ) {
     delete scope;
   }
 
@@ -52,7 +56,8 @@ public without sharing class JT_LdvCheckpointPurgeBatch implements Database.Batc
   @TestVisible
   private static Integer getRetentionDays() {
     JT_DynamicQuerySettings__c settings = JT_DynamicQuerySettings__c.getInstance();
-    return settings != null && settings.JT_LdvCheckpointRetentionDays__c != null
+    return settings != null &&
+      settings.JT_LdvCheckpointRetentionDays__c != null
       ? Integer.valueOf(settings.JT_LdvCheckpointRetentionDays__c)
       : DEFAULT_RETENTION_DAYS;
   }

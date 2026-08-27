@@ -2,7 +2,8 @@
 <CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>JT_RecordsProcessed__c</fullName>
     <defaultValue>0</defaultValue>
-    <description>Cumulative records processed by this operation so far.</description>
+    <description
+  >Cumulative records processed by this operation so far.</description>
     <externalId>false</externalId>
     <label>Records Processed</label>
     <precision>18</precision>

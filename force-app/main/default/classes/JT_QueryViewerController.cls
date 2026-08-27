@@ -1674,6 +1674,130 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
+   * @description Starts a chained, multi-transaction LDV operation and returns immediately
+   * with its operation id - it does not wait for any chunk to complete. Poll
+   * getLdvOperationStatus(operationId) for progress. Intended for export/integration workloads
+   * whose CursorProcessor does its own side-effecting work per chunk; interactive UI browsing
+   * of results is not wired to this path yet.
+   * @author Jaime Terrats
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @param batchSize Records per chunk (default 200)
+   * @param processorClassName Fully-qualified JT_DataSelector.CursorProcessor implementation
+   * with a public no-arg constructor (e.g. JT_LdvCountingProcessor)
+   * @return String The operation id (JT_LDV_Checkpoint__c.JT_OperationId__c) to poll
+   **/
+  @AuraEnabled
+  public static String startLdvBulkOperation(
+    String devName,
+    String bindingsJson,
+    Integer batchSize,
+    String processorClassName
+  ) {
+    try {
+      Map<String, Object> bindings = deserializeBindings(bindingsJson);
+      JT_LDV_Checkpoint__c checkpoint = JT_DataSelector.startCursorOperation(
+        devName,
+        bindings,
+        true,
+        batchSize,
+        processorClassName
+      );
+      System.enqueueJob(new JT_LdvCursorQueueable(checkpoint.Id));
+      return checkpoint.JT_OperationId__c;
+    } catch (Exception e) {
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  /**
+   * @description Polls the current progress of a chained LDV operation started via
+   * startLdvBulkOperation.
+   * @author Jaime Terrats
+   * @param operationId The operation id returned by startLdvBulkOperation
+   * @return LdvOperationStatus Current checkpoint status/progress
+   **/
+  @AuraEnabled
+  public static LdvOperationStatus getLdvOperationStatus(String operationId) {
+    List<JT_LDV_Checkpoint__c> checkpoints = [
+      SELECT
+        JT_Status__c,
+        JT_CursorPosition__c,
+        JT_RecordsProcessed__c,
+        JT_TotalRecordCount__c,
+        JT_LastError__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_OperationId__c = :operationId
+      WITH USER_MODE
+      LIMIT 1
+    ];
+
+    if (checkpoints.isEmpty()) {
+      throw new AuraHandledException(
+        'No LDV operation found for the given operation id.'
+      );
+    }
+
+    JT_LDV_Checkpoint__c checkpoint = checkpoints[0];
+    LdvOperationStatus status = new LdvOperationStatus();
+    status.status = checkpoint.JT_Status__c;
+    status.recordsProcessed = (Integer) checkpoint.JT_RecordsProcessed__c;
+    status.totalRecordCount = (Integer) checkpoint.JT_TotalRecordCount__c;
+    status.lastError = checkpoint.JT_LastError__c;
+    return status;
+  }
+
+  /**
+   * @description Cooperatively cancels a chained LDV operation. The currently-executing chunk
+   * still finishes; the next chunk observes the Aborted status and stops the chain instead of
+   * re-enqueueing (see JT_LdvCursorQueueable).
+   * @author Jaime Terrats
+   * @param operationId The operation id returned by startLdvBulkOperation
+   **/
+  @AuraEnabled
+  public static void cancelLdvOperation(String operationId) {
+    List<JT_LDV_Checkpoint__c> checkpoints = [
+      SELECT Id, JT_Status__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_OperationId__c = :operationId
+      WITH USER_MODE
+      LIMIT 1
+    ];
+
+    if (checkpoints.isEmpty()) {
+      throw new AuraHandledException(
+        'No LDV operation found for the given operation id.'
+      );
+    }
+
+    JT_LDV_Checkpoint__c checkpoint = checkpoints[0];
+    if (
+      checkpoint.JT_Status__c == 'Completed' ||
+      checkpoint.JT_Status__c == 'Failed'
+    ) {
+      return;
+    }
+
+    checkpoint.JT_Status__c = 'Aborted';
+    Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+  }
+
+  /**
+   * @description Progress snapshot for a chained LDV operation, returned by
+   * getLdvOperationStatus.
+   **/
+  public class LdvOperationStatus {
+    @AuraEnabled
+    public String status;
+    @AuraEnabled
+    public Integer recordsProcessed;
+    @AuraEnabled
+    public Integer totalRecordCount;
+    @AuraEnabled
+    public String lastError;
+  }
+
+  /**
    * @description Helper to check if required parameters are empty
    * @param bindings Map of parameter bindings
    * @return Boolean True if all bindings are empty

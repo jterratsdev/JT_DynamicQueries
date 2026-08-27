@@ -1972,7 +1972,7 @@ private class JT_DataSelector_Test {
   }
 
   /**
-   * @description processRecordsWithCursor (ADR-001 sub-PR 1) must use the real
+   * @description processRecordsWithCursor must use the real
    * Database.Cursor API and persist a Completed JT_LDV_Checkpoint__c row on success.
    */
   @IsTest
@@ -2027,6 +2027,29 @@ private class JT_DataSelector_Test {
       processor.totalRecordsProcessed,
       totalProcessed,
       'processRecordsWithCursor should return the same count the CursorProcessor received'
+    );
+  }
+
+  /**
+   * @description startCursorOperation must persist a Pending checkpoint
+   * with the total record count already known, without fetching or processing any records.
+   */
+  @IsTest
+  static void testStartCursorOperationPersistsPendingCheckpointWithoutProcessing() {
+    Test.startTest();
+    JT_LDV_Checkpoint__c checkpoint = JT_DataSelector.startCursorOperation(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      'JT_LdvCountingProcessor'
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      'Pending',
+      checkpoint.JT_Status__c,
+      'startCursorOperation should persist a Pending checkpoint and defer all fetching to the queueable chain'
     );
   }
 

@@ -72,7 +72,7 @@ public without sharing class JT_SetupWizardController {
       : Label.JT_SetupWizardController_toolingApiConnectionFailed;
     status.steps.add(testStep);
 
-    // Step 2: LDV Checkpoint Purge job scheduled (optional - see ADR-001 §3/§7)
+    // Step 2: LDV Checkpoint Purge job scheduled (optional - manual admin step)
     final SetupStepStatus ldvPurgeStep = new SetupStepStatus();
     ldvPurgeStep.stepName = Label.JT_SetupWizardController_stepNameLdvPurge;
     ldvPurgeStep.isRequired = false;
