@@ -3,7 +3,7 @@
 <!-- setup-agents: 1.1.0 -->
 
 This file provides guidance to Claude Code when working with **JT_DynamicQueries** —
-a metadata-driven SOQL execution framework for Salesforce (v2.5.0, API 65.0).
+a metadata-driven SOQL execution framework for Salesforce (v2.5.0, API 67.0).
 
 ## Project Context
 
@@ -14,7 +14,7 @@ a metadata-driven SOQL execution framework for Salesforce (v2.5.0, API 65.0).
 - **Key Apex classes:** `JT_QueryViewerController`, `JT_QueryBindingUtil`, `JT_ExecutionStateManager`, `JT_DataSelector`, `JT_ConfigurationSelector`, `JT_ErrorLogger`.
 - **LWC root component:** `jtQueryViewer` (orchestrates all other components).
 - **Test naming:** `<ClassName>_Test` (e.g., `JT_QueryViewerController_Test`).
-- **API version:** always read `sfdx-project.json` → `sourceApiVersion` before generating metadata. Current: **65.0**.
+- **API version:** always read `sfdx-project.json` → `sourceApiVersion` before generating metadata. Current: **67.0**. Note: each Apex class pins its own `apiVersion` in its `.cls-meta.xml`, so bumping this default does not retroactively change already-deployed classes. API 67.0 changes Apex's default DML/SOQL access mode from system mode to user mode for code compiled at that version — new classes should still declare `AccessLevel` explicitly rather than relying on either default.
 
 ## General Principles
 
@@ -317,3 +317,35 @@ npm run lint
 
 - Concise, but detailed in architectural justifications.
 - Correct mistakes directly without apologizing.
+
+<!-- setup-agents:block:start id="setup-agents-activation" version="3.18.9" -->
+
+## setup-agents workflow (required)
+
+**CONTRACT:** Task-first, no exceptions.
+Do NOT wait for user instruction when workflow setup is required.
+
+### Pre-flight check
+
+> Before reading, researching, editing, or generating artifacts, run:
+
+```bash
+sf setup-agents task list --json
+sf setup-agents workflow pending --json
+```
+
+- Resume matching work. Otherwise confirm once, create a task, and run
+  `sf setup-agents workflow run --story <id> --gates phase`.
+- Load only the applicable `.setup-agents/skills/<skill>/SKILL.md` before exploration or implementation.
+- Route subagents through active profiles; prefer cached references; record evidence and reviews.
+- Complete with `sf setup-agents task done --id <id>` and disclose any workflow or evidence gap.
+- In the web console use `[prompt:radio|q|a|b]`, `[prompt:checkbox|q|a|b]`, or `[prompt:text|q]`;
+  never call `AskUserQuestion` there.
+
+### Automatic context injection (UserPromptSubmit hook)
+
+A `UserPromptSubmit` hook in `.claude/settings.json` injects active task/workflow state into the
+session at the start of every prompt (guarded — it no-ops if its fast-path CLI is unavailable).
+No manual pre-flight is needed when this hook is present.
+
+<!-- setup-agents:block:end id="setup-agents-activation" -->
