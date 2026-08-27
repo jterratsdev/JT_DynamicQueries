@@ -988,8 +988,10 @@ public inherited sharing class JT_DataSelector {
   }
 
   /**
-   * @description Process large query results using Apex Cursors (Beta)
-   * Allows efficient processing of >50K records in batches
+   * @description Process large query results using a real Apex Database.Cursor,
+   * fetched in bounded chunks and tracked via a JT_LDV_Checkpoint__c row.
+   * Still invoked synchronously in a single transaction (see ADR-001 sub-PR 1) -
+   * multi-transaction chaining/resumption lands in a later sub-PR.
    * @param params CursorProcessingParams object containing all parameters
    * @return Integer Total number of records processed
    * @see https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_SOQL_cursors.htm
@@ -1015,28 +1017,71 @@ public inherited sharing class JT_DataSelector {
       ? params.batchSize
       : 200;
 
-    Integer totalProcessed = 0;
-
-    List<SObject> allRecords = Database.queryWithBinds(
-      config.JT_BaseQuery__c,
-      mergedBindings,
-      accessMode
+    JT_LDV_Checkpoint__c checkpoint = new JT_LDV_Checkpoint__c(
+      JT_OperationId__c = generateOperationId(),
+      JT_ConfigDevName__c = params.devName,
+      JT_ChunkSize__c = effectiveBatchSize,
+      JT_CursorPosition__c = 0,
+      JT_RecordsProcessed__c = 0,
+      JT_Status__c = 'InProgress',
+      JT_InitiatedBy__c = UserInfo.getUserId(),
+      JT_StartedAt__c = System.now()
     );
+    Database.insert(checkpoint, AccessLevel.SYSTEM_MODE);
 
-    for (Integer i = 0; i < allRecords.size(); i += effectiveBatchSize) {
-      List<SObject> batch = new List<SObject>();
-      for (
-        Integer j = i;
-        j < Math.min(i + effectiveBatchSize, allRecords.size());
-        j++
-      ) {
-        batch.add(allRecords[j]);
+    Integer totalProcessed = 0;
+    try {
+      Database.Cursor cursor = Database.getCursorWithBinds(
+        config.JT_BaseQuery__c,
+        mergedBindings,
+        accessMode
+      );
+      Integer totalSize = cursor.getNumRecords();
+      Integer position = 0;
+
+      while (position < totalSize) {
+        Integer fetchSize = Math.min(effectiveBatchSize, totalSize - position);
+        List<SObject> batch = cursor.fetch(position, fetchSize);
+        if (batch.isEmpty()) {
+          break;
+        }
+        params.processor.processBatch(batch);
+        totalProcessed += batch.size();
+        position += batch.size();
       }
-      params.processor.processBatch(batch);
-      totalProcessed += batch.size();
+
+      checkpoint.JT_Status__c = 'Completed';
+      checkpoint.JT_CursorPosition__c = position;
+      checkpoint.JT_RecordsProcessed__c = totalProcessed;
+      checkpoint.JT_TotalRecordCount__c = totalSize;
+      checkpoint.JT_CompletedAt__c = System.now();
+      Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+    } catch (Exception e) {
+      checkpoint.JT_Status__c = 'Failed';
+      checkpoint.JT_LastError__c = e.getTypeName() + ': ' + e.getMessage();
+      Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+      throw e;
     }
 
     return totalProcessed;
+  }
+
+  /**
+   * @description Generates a UUID-v4-shaped operation id for JT_LDV_Checkpoint__c.JT_OperationId__c.
+   * @return String 36-character hex-and-hyphen identifier
+   */
+  @TestVisible
+  private static String generateOperationId() {
+    String hex = EncodingUtil.convertToHex(Crypto.generateAesKey(128));
+    return hex.substring(0, 8) +
+      '-' +
+      hex.substring(8, 12) +
+      '-' +
+      hex.substring(12, 16) +
+      '-' +
+      hex.substring(16, 20) +
+      '-' +
+      hex.substring(20);
   }
 
   /**

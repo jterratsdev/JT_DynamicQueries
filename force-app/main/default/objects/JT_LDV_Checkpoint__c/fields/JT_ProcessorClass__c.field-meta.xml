@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>JT_ProcessorClass__c</fullName>
+    <description
+  >Fully-qualified JT_DataSelector.CursorProcessor implementation type name, persisted so a chained Queueable chunk can re-instantiate it (instances aren't serializable across transactions).</description>
+    <externalId>false</externalId>
+    <label>Processor Class</label>
+    <length>255</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

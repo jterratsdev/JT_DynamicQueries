@@ -281,7 +281,7 @@ private class JT_SetupWizardController_Test {
 
     System.assertNotEquals(null, status, 'Status should not be null');
     System.assertNotEquals(null, status.steps, 'Steps should not be null');
-    System.assertEquals(1, status.steps.size(), 'Should have one step');
+    System.assertEquals(2, status.steps.size(), 'Should have two steps');
 
     JT_SetupWizardController.SetupStepStatus toolingStep = status.steps[0];
     System.assertEquals(
@@ -298,6 +298,42 @@ private class JT_SetupWizardController_Test {
       null,
       toolingStep.statusMessage,
       'Status message should be populated'
+    );
+  }
+
+  /**
+   * @description The optional LDV checkpoint purge step must never block allStepsComplete,
+   * even when no CronTrigger is scheduled (ADR-001 §3/§7 - manual admin step).
+   */
+  @IsTest
+  static void testCheckCompleteSetupLdvPurgeStepIsOptionalAndDoesNotBlock() {
+    Test.setMock(HttpCalloutMock.class, new JT_ToolingAPIMock(200, 'OK'));
+
+    Test.startTest();
+    JT_SetupWizardController.CompleteSetupStatus status = JT_SetupWizardController.checkCompleteSetup();
+    Test.stopTest();
+
+    JT_SetupWizardController.SetupStepStatus ldvPurgeStep = status.steps[1];
+    System.assertEquals(
+      false,
+      ldvPurgeStep.isRequired,
+      'LDV checkpoint purge step must be optional so an unscheduled job never blocks setup'
+    );
+  }
+
+  /**
+   * @description With no CronTrigger scheduled, isLdvCheckpointPurgeScheduled must return false.
+   */
+  @IsTest
+  static void testIsLdvCheckpointPurgeScheduledFalseWhenNotScheduled() {
+    Test.startTest();
+    Boolean isScheduled = JT_SetupWizardController.isLdvCheckpointPurgeScheduled();
+    Test.stopTest();
+
+    System.assertEquals(
+      false,
+      isScheduled,
+      'isLdvCheckpointPurgeScheduled should be false when no matching CronTrigger exists'
     );
   }
 }

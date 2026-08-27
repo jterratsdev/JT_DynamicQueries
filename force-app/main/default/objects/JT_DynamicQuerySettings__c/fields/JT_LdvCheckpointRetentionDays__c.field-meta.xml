@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>JT_LdvCheckpointRetentionDays__c</fullName>
+    <defaultValue>30</defaultValue>
+    <description
+  >Days to retain Completed/Failed JT_LDV_Checkpoint__c rows before JT_LdvCheckpointPurgeBatch deletes them. Scheduling that batch is a manual admin step - see CONTRIBUTING.md.</description>
+    <inlineHelpText
+  >Completed/Failed LDV checkpoint rows older than this are deleted by the JT_LdvCheckpointPurgeBatch job once an admin schedules it.</inlineHelpText>
+    <label>LDV Checkpoint Retention Days</label>
+    <precision>18</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

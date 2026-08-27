@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>JT_LastError__c</fullName>
+    <description
+  >Error type and message only for the last failure - must never contain bind/query values (ADR-001 §4).</description>
+    <externalId>false</externalId>
+    <label>Last Error</label>
+    <length>32768</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>JT_BindingsJson__c</fullName>
+    <description
+  >Serialized bind map needed to resume the cursor. Deliberately not Shield-encrypted (ADR-001 §2) - access is restricted via this object's Private OWD and admin-only FLS, never logged, never exposed via LWC or public API.</description>
+    <externalId>false</externalId>
+    <label>Bindings JSON</label>
+    <length>32768</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

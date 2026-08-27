@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description
+  >Durable checkpoint/job-state for bounded, resumable Large-Data-Volume (LDV) cursor processing. Never expose via public API or LWC — restricted to the JT Dynamic Queries admin permission set (ADR-001).</description>
+    <enableActivities>false</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <label>LDV Checkpoint</label>
+    <nameField>
+        <displayFormat>LDV-{00000}</displayFormat>
+        <label>Checkpoint Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>LDV Checkpoints</pluralLabel>
+    <sharingModel>Private</sharingModel>
+    <visibility>Public</visibility>
+</CustomObject>

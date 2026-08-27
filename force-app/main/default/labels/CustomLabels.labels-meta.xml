@@ -3888,6 +3888,31 @@ Y bueno...&lt;br /&gt;&lt;br /&gt;</value>
         <value>Tooling API connection failed - check user permissions</value>
     </labels>
     <labels>
+        <fullName>JT_SetupWizardController_stepNameLdvPurge</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription
+    >JT_SetupWizardController - stepNameLdvPurge</shortDescription>
+        <value>LDV Checkpoint Purge Job (optional)</value>
+    </labels>
+    <labels>
+        <fullName>JT_SetupWizardController_ldvPurgeScheduled</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription
+    >JT_SetupWizardController - ldvPurgeScheduled</shortDescription>
+        <value>Checkpoint cleanup is scheduled</value>
+    </labels>
+    <labels>
+        <fullName>JT_SetupWizardController_ldvPurgeNotScheduled</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription
+    >JT_SetupWizardController - ldvPurgeNotScheduled</shortDescription>
+        <value
+    >Not scheduled - old LDV checkpoint records will accumulate. See CONTRIBUTING.md &quot;Scheduled Jobs&quot;.</value>
+    </labels>
+    <labels>
         <fullName>JT_SettingsService_insufficientPermissions</fullName>
         <language>en_US</language>
         <protected>false</protected>

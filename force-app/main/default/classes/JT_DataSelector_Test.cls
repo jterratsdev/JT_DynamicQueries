@@ -1970,4 +1970,82 @@ private class JT_DataSelector_Test {
       );
     }
   }
+
+  /**
+   * @description processRecordsWithCursor (ADR-001 sub-PR 1) must use the real
+   * Database.Cursor API and persist a Completed JT_LDV_Checkpoint__c row on success.
+   */
+  @IsTest
+  static void testProcessRecordsWithCursorCreatesCompletedCheckpoint() {
+    TestCursorProcessor processor = new TestCursorProcessor();
+    JT_DataSelector.CursorProcessingParams params = new JT_DataSelector.CursorProcessingParams(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      processor
+    );
+
+    Test.startTest();
+    JT_DataSelector.processRecordsWithCursor(params);
+    Test.stopTest();
+
+    JT_LDV_Checkpoint__c checkpoint = [
+      SELECT JT_Status__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_ConfigDevName__c = 'Test_Record'
+      ORDER BY CreatedDate DESC
+      LIMIT 1
+    ];
+    Assert.areEqual(
+      'Completed',
+      checkpoint.JT_Status__c,
+      'processRecordsWithCursor should mark its checkpoint row Completed on success'
+    );
+  }
+
+  /**
+   * @description The count processRecordsWithCursor returns must match what the
+   * CursorProcessor actually received from Cursor.fetch(), proving the chunking loop is real.
+   */
+  @IsTest
+  static void testProcessRecordsWithCursorReturnsProcessorRecordCount() {
+    TestCursorProcessor processor = new TestCursorProcessor();
+    JT_DataSelector.CursorProcessingParams params = new JT_DataSelector.CursorProcessingParams(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      processor
+    );
+
+    Test.startTest();
+    Integer totalProcessed = JT_DataSelector.processRecordsWithCursor(params);
+    Test.stopTest();
+
+    Assert.areEqual(
+      processor.totalRecordsProcessed,
+      totalProcessed,
+      'processRecordsWithCursor should return the same count the CursorProcessor received'
+    );
+  }
+
+  /**
+   * @description generateOperationId must produce a UUID-v4-shaped identifier that fits
+   * JT_LDV_Checkpoint__c.JT_OperationId__c (Text(36), External Id, Unique).
+   */
+  @IsTest
+  static void testGenerateOperationIdProducesUuidShapedString() {
+    Test.startTest();
+    String operationId = JT_DataSelector.generateOperationId();
+    Test.stopTest();
+
+    Assert.isTrue(
+      Pattern.matches(
+        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        operationId
+      ),
+      'generateOperationId should return a UUID-v4-shaped 36 character identifier'
+    );
+  }
 }
