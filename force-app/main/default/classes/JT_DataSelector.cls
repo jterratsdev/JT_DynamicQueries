@@ -1146,6 +1146,75 @@ public inherited sharing class JT_DataSelector {
   }
 
   /**
+   * @description One bounded page of a real Database.Cursor, for forward pagination
+   * ({first, after, hasNextPage, endCursor}) instead of loading a full result set client-side.
+   */
+  public class QueryPageResult {
+    public List<SObject> records;
+    public Boolean hasNextPage;
+    public Integer nextPosition;
+    public Integer totalRecordCount;
+  }
+
+  /**
+   * @description Fetches one bounded page via a real Database.Cursor - the query is re-opened
+   * fresh on every call (a Database.Cursor cannot be persisted across separate Apex
+   * invocations), then bounded to exactly [position, position + pageSize).
+   * @param devName Configuration developer name
+   * @param bindings Custom bindings
+   * @param enforceSecurity Whether to use USER_MODE
+   * @param position Row offset to start this page at (0 for the first page)
+   * @param pageSize Bounded page size (default 10)
+   * @return QueryPageResult One page plus pagination metadata
+   */
+  public static QueryPageResult getRecordsPage(
+    String devName,
+    Map<String, Object> bindings,
+    Boolean enforceSecurity,
+    Integer position,
+    Integer pageSize
+  ) {
+    final JT_DataSelector selectorInstance = JT_DataSelector.getInstance();
+    final JT_DynamicQueryConfiguration__mdt config = selectorInstance.getConfig(
+      devName
+    );
+
+    Map<String, Object> configBindings = getConfigBindings(config);
+    Map<String, Object> mergedBindings = mergeBindings(
+      configBindings,
+      bindings
+    );
+    AccessLevel accessMode = getAccessLevel(enforceSecurity);
+
+    Integer effectivePosition = position != null && position > 0
+      ? position
+      : 0;
+    Integer effectivePageSize = pageSize != null && pageSize > 0
+      ? pageSize
+      : 10;
+
+    Database.Cursor cursor = Database.getCursorWithBinds(
+      config.JT_BaseQuery__c,
+      mergedBindings,
+      accessMode
+    );
+    Integer totalSize = cursor.getNumRecords();
+    Integer fetchSize = Math.min(
+      effectivePageSize,
+      Math.max(0, totalSize - effectivePosition)
+    );
+
+    QueryPageResult result = new QueryPageResult();
+    result.records = fetchSize > 0
+      ? cursor.fetch(effectivePosition, fetchSize)
+      : new List<SObject>();
+    result.nextPosition = effectivePosition + result.records.size();
+    result.hasNextPage = result.nextPosition < totalSize;
+    result.totalRecordCount = totalSize;
+    return result;
+  }
+
+  /**
    * @description Generates a UUID-v4-shaped operation id for JT_LDV_Checkpoint__c.JT_OperationId__c.
    * @return String 36-character hex-and-hyphen identifier
    */

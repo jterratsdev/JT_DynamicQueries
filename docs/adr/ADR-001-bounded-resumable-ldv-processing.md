@@ -3,7 +3,7 @@
 # ADR-001: Bounded, Resumable Large-Data-Volume (LDV) Processing
 
 **Author:** Salesforce Servicios Profesionales
-**Version:** 1.7
+**Version:** 1.8
 **Status:** Proposed — awaiting developer sign-off before implementation
 **Related:** GitHub Issue #43
 **API Version Target:** 67.0 (per `sfdx-project.json` → `sourceApiVersion`)
@@ -577,13 +577,23 @@ should land before the chained Queueable is exposed to end users).
    both the Apex and LWC changes deployed to a scratch org — the fixed auth helper
    (`tests/e2e/utils/sfAuth.js`, see below) made this possible where sub-PRs 1–2's Apex-only
    testing could not reach.
-4. **GraphQL-style forward pagination in `jtQueryResults`.** Replace `Array.slice` over a
-   fully-loaded `_records` with `{first, after, hasNextPage, endCursor}` calls into the
-   controller, backed by the checkpoint/cursor infrastructure from sub-PR 1–2. **UI:** low
-   risk for pagination itself — today's Previous/Next-only controls map directly; add a
-   client-side visited-cursor stack to recover "Previous" (see UI impact §7). Also picks up
-   the "operation in progress" polling/progress/Cancel state deferred from sub-PR 2, since
-   this is the first point where `jtQueryViewer` has bounded pages to actually display.
+4. **GraphQL-style forward pagination — backend contract delivered, UI cutover deferred.**
+   Added `JT_DataSelector.getRecordsPage`/`QueryPageResult` and
+   `JT_QueryViewerController.getQueryResultsPage`/`QueryPage`: a real `Database.Cursor`
+   re-opened fresh per call (a `Cursor` cannot be persisted across separate Apex
+   invocations), bounded to `[position, position + first)`, with `endCursor` a plain
+   row-offset token a caller passes back as `after` to advance. Verified with tests proving
+   `endCursor` from page 1 correctly advances to page 2's remaining records. **Deliberately
+   NOT wired into `jtQueryViewer`/`jtQueryResults` in this pass** — today's main "Execute"
+   flow (`executeQueryNormal`/`executeQueryWithBatches`) and `jtQueryResults`' client-side
+   `Array.slice` pagination were just verified end-to-end via
+   `tests/e2e/queryRiskWarning.spec.js`, `queryExecutionHappyPath.spec.js`, and
+   `bugfixes.spec.js` (sub-PR 3). Swapping the primary execute flow's data-fetching
+   mechanism to page-by-page fetching is itself the single riskiest UI change in this ADR
+   (it changes what every other E2E spec depends on) and deserves its own dedicated pass
+   with a full E2E re-run, not a rushed cutover appended to the backend contract's first
+   pass. The "operation in progress" polling/progress/Cancel state deferred from sub-PR 2
+   remains deferred until that cutover happens.
 5. **Streaming CSV/JSON export.** Rework export to request bounded pages via the same
    forward-pagination contract from sub-PR 4, writing output incrementally rather than
    from one retained in-memory collection. **UI:** replaces instant-download-on-click with

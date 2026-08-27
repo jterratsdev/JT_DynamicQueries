@@ -2106,6 +2106,44 @@ private class JT_QueryViewerController_Test {
   }
 
   /**
+   * @description getQueryResultsPage's endCursor must be usable as the next call's "after" to
+   * advance to the next page, without needing the caller to already know row offsets.
+   */
+  @IsTest
+  static void testGetQueryResultsPageEndCursorAdvancesToNextPage() {
+    List<Account> accounts = new List<Account>();
+    for (Integer i = 0; i < 3; i++) {
+      accounts.add(new Account(Name = 'Test Account'));
+    }
+    insert accounts;
+
+    String bindingsJson = JSON.serialize(
+      new Map<String, Object>{ 'name' => 'Test Account' }
+    );
+
+    Test.startTest();
+    JT_QueryViewerController.QueryPage firstPage = JT_QueryViewerController.getQueryResultsPage(
+      'Test_Record',
+      bindingsJson,
+      2,
+      null
+    );
+    JT_QueryViewerController.QueryPage secondPage = JT_QueryViewerController.getQueryResultsPage(
+      'Test_Record',
+      bindingsJson,
+      2,
+      firstPage.endCursor
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      1,
+      secondPage.records.size(),
+      'The second page (using the first page endCursor as after) should return the 1 remaining record'
+    );
+  }
+
+  /**
    * @description getLdvOperationStatus must fail loudly for an unknown operation id rather
    * than silently returning a blank/default status.
    */

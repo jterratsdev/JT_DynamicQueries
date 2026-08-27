@@ -2089,6 +2089,63 @@ private class JT_DataSelector_Test {
   }
 
   /**
+   * @description getRecordsPage must return a bounded page and correctly report more pages
+   * remain when the total exceeds the page size.
+   */
+  @IsTest
+  static void testGetRecordsPageReportsHasNextPageWhenMoreRecordsRemain() {
+    List<Account> accounts = new List<Account>();
+    for (Integer i = 0; i < 5; i++) {
+      accounts.add(new Account(Name = 'Test Account'));
+    }
+    insert accounts;
+
+    Test.startTest();
+    JT_DataSelector.QueryPageResult page = JT_DataSelector.getRecordsPage(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      0,
+      2
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      true,
+      page.hasNextPage,
+      'A 5-record result with page size 2 must report more pages remain after the first page'
+    );
+  }
+
+  /**
+   * @description getRecordsPage must report hasNextPage=false once the last page is fetched.
+   */
+  @IsTest
+  static void testGetRecordsPageReportsNoNextPageOnLastPage() {
+    List<Account> accounts = new List<Account>();
+    for (Integer i = 0; i < 5; i++) {
+      accounts.add(new Account(Name = 'Test Account'));
+    }
+    insert accounts;
+
+    Test.startTest();
+    JT_DataSelector.QueryPageResult page = JT_DataSelector.getRecordsPage(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      4,
+      2
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      false,
+      page.hasNextPage,
+      'Fetching the last remaining record must report no further pages'
+    );
+  }
+
+  /**
    * @description generateOperationId must produce a UUID-v4-shaped identifier that fits
    * JT_LDV_Checkpoint__c.JT_OperationId__c (Text(36), External Id, Unique).
    */

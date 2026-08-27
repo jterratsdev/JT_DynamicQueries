@@ -1763,6 +1763,62 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
+   * @description One bounded page of query results, for GraphQL-style forward pagination
+   * instead of loading and slicing a full result set client-side.
+   **/
+  public class QueryPage {
+    @AuraEnabled
+    public List<Object> records;
+    @AuraEnabled
+    public Boolean hasNextPage;
+    @AuraEnabled
+    public String endCursor;
+    @AuraEnabled
+    public Integer totalRecordCount;
+  }
+
+  /**
+   * @description Fetches one bounded page of records via a real Database.Cursor. The cursor
+   * is bind-safe and re-opened fresh on every call (Database.Cursor cannot be persisted across
+   * separate Apex invocations) - endCursor is a plain row-offset token, not an opaque handle.
+   * @author Jaime Terrats
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @param first Page size (default 10)
+   * @param after Opaque cursor from the previous page's endCursor, or null/blank for the first page
+   * @return QueryPage One page plus hasNextPage/endCursor/totalRecordCount
+   **/
+  @AuraEnabled
+  public static QueryPage getQueryResultsPage(
+    String devName,
+    String bindingsJson,
+    Integer first,
+    String after
+  ) {
+    try {
+      Map<String, Object> bindings = deserializeBindings(bindingsJson);
+      Integer position = String.isNotBlank(after) ? Integer.valueOf(after) : 0;
+
+      JT_DataSelector.QueryPageResult pageResult = JT_DataSelector.getRecordsPage(
+        devName,
+        bindings,
+        true,
+        position,
+        first
+      );
+
+      QueryPage page = new QueryPage();
+      page.records = serializeRecordsForLWC(pageResult.records);
+      page.hasNextPage = pageResult.hasNextPage;
+      page.endCursor = String.valueOf(pageResult.nextPosition);
+      page.totalRecordCount = pageResult.totalRecordCount;
+      return page;
+    } catch (Exception e) {
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  /**
    * @description Helper to check if required parameters are empty
    * @param bindings Map of parameter bindings
    * @return Boolean True if all bindings are empty
