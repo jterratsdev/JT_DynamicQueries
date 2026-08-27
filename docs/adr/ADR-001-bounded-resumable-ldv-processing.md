@@ -3,10 +3,10 @@
 # ADR-001: Bounded, Resumable Large-Data-Volume (LDV) Processing
 
 **Author:** Salesforce Servicios Profesionales
-**Version:** 1.5
+**Version:** 1.7
 **Status:** Proposed — awaiting developer sign-off before implementation
 **Related:** GitHub Issue #43
-**API Version Target:** 65.0 (per `sfdx-project.json` → `sourceApiVersion`)
+**API Version Target:** 67.0 (per `sfdx-project.json` → `sourceApiVersion`)
 
 ---
 
@@ -451,7 +451,7 @@ sequenceDiagram
   non-required custom fields consistently reports `created=true` from the Metadata API across
   three independently-tested orgs (two fresh scratch orgs and a long-lived real Developer
   Edition org), but the fields are absent from `sobject describe`, SOQL execution, and even
-  Anonymous Apex compilation immediately afterward — while already-deployed Apex *classes*
+  Anonymous Apex compilation immediately afterward — while already-deployed Apex _classes_
   referencing the same fields continue to compile and deploy successfully. Ruled out as causes:
   FLS/permission-set assignment (`AccessLevel.SYSTEM_MODE` still fails to compile in Anonymous
   Apex), propagation delay (persists past 90+ seconds), and "too many fields in one deploy"
@@ -460,6 +460,15 @@ sequenceDiagram
   successfully end-to-end against the full checkpoint schema in any tested environment during
   this work. Re-verify with `sf apex run test` once this resolves (possibly a Salesforce
   support case) before considering sub-PRs 1–2 fully proven in a live org.
+- **`tests/e2e/utils/sfAuth.js`'s frontdoor.jsp session injection was silently broken for
+  every E2E spec, unrelated to this ADR.** `getSFSession()` calls `sf org display --json`
+  without `SF_TEMP_SHOW_SECRETS=true`; newer `sf` CLI versions redact `accessToken` from
+  `--json` output by default, so `frontdoorUrl` was built with the literal string
+  `"[REDACTED]..."` as `sid`, landing every test on the login page. Fixed by adding
+  `SF_TEMP_SHOW_SECRETS: "true"` to the env passed to the `sf org display` calls. Also note:
+  a fresh scratch org's default user has no permission set assigned, so the "Dynamic Query
+  Framework" app is invisible to it until `sf org assign permset --name JT_Dynamic_Queries`
+  runs - this is a one-time scratch-org setup step, not a bug.
 - **No native Apex Query Plan API.** The issue asks for "Query Plan/selectivity evidence
   independently of record count," but Apex exposes no such method — only the Tooling/REST
   `/query/explain` HTTP endpoint. This forces a callout dependency into what was previously
@@ -546,14 +555,28 @@ should land before the chained Queueable is exposed to end users).
    polling/progress/Cancel state only has something real to wire into once results can be
    paginated back to the client; building it against this sub-PR's plumbing now would mean
    reworking it again once sub-PR 4 lands.
-3. **Fail-closed count/risk gating + bind-safe count contract.** Introduce
-   `JT_WorkloadContract`, replace `countRecordsInternal`'s regex+literal-interpolation with
-   `Database.countQueryWithBinds`, remove the fail-open catch block in
-   `getRecordsWithAutoStrategy`, replace `assessQueryRisk`'s WHERE+binding heuristic with
-   Query Plan evidence (via `JT_ToolingApiUtil`, no Named Credential — see §5) for
-   `LARGE`/`VERY_LARGE` contracts, and strip bind-value logging. **UI:** fixes the client-side
-   fail-open mirror in `assessQueryRiskAndExecute` (`jtQueryViewer.js:2839-2846`, item 5b) —
-   must replace the silent `executeQueryNormal()` fallback with a blocking error state.
+3. **Fail-closed count/risk gating + bind-safe count contract.** Delivered: replaced
+   `countRecordsInternal`'s regex+literal-interpolation with `Database.countQueryWithBinds`
+   (removed the entire manual escaping block); replaced `assessQueryRisk`'s equivalent
+   literal-interpolation path (`replaceBindVariables` → `Database.countQueryWithBinds`,
+   renamed the now-non-substituting helper to `removeEmptyBindingConditions`); removed the
+   fail-open catch in `getRecordsWithAutoStrategy` in favor of a new
+   `JT_LdvRiskAssessmentException` callers must handle explicitly; stripped both bind-value
+   `System.debug` calls in `assessQueryRisk`. **UI:** fixed the client-side fail-open mirror in
+   `assessQueryRiskAndExecute` (item 5b) — the silent `executeQueryNormal()` fallback on
+   `assessQueryRisk` failure is now a blocking error toast
+   (`JT_jtQueryViewer_riskAssessmentFailed`). **Deferred to a follow-up within this same
+   scope:** `JT_WorkloadContract` and Query Plan evidence via `JT_ToolingApiUtil` (§5) were not
+   built in this pass — `assessQueryRisk`'s `hasWhereClause && hasValidBindings` selectivity
+   heuristic (lines ~657, ~704) is unchanged and still the last-resort classification this ADR
+   documents as acceptable only for `SMALL`/interactive paths (§4). Introducing the actual
+   `LARGE`/`VERY_LARGE` gate requires threading a caller-declared contract through
+   `assessQueryRisk`'s public signature (and the LWC caller), which is a large enough change on
+   its own to warrant its own dedicated pass rather than folding it into this one. **Verified
+   end-to-end** against a real browser (`tests/e2e/queryRiskWarning.spec.js`, 3/3 passing) with
+   both the Apex and LWC changes deployed to a scratch org — the fixed auth helper
+   (`tests/e2e/utils/sfAuth.js`, see below) made this possible where sub-PRs 1–2's Apex-only
+   testing could not reach.
 4. **GraphQL-style forward pagination in `jtQueryResults`.** Replace `Array.slice` over a
    fully-loaded `_records` with `{first, after, hasNextPage, endCursor}` calls into the
    controller, backed by the checkpoint/cursor infrastructure from sub-PR 1–2. **UI:** low

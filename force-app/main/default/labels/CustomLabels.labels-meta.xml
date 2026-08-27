@@ -3176,6 +3176,14 @@ Y bueno...&lt;br /&gt;&lt;br /&gt;</value>
         <value>Query Error</value>
     </labels>
     <labels>
+        <fullName>JT_jtQueryViewer_riskAssessmentFailed</fullName>
+        <language>en_US</language>
+        <protected>false</protected>
+        <shortDescription
+    >jtQueryViewer - riskAssessmentFailed</shortDescription>
+        <value>Risk Assessment Failed</value>
+    </labels>
+    <labels>
         <fullName>JT_jtQueryViewer_errorUpdatingSettings</fullName>
         <language>en_US</language>
         <protected>false</protected>

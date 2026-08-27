@@ -19,7 +19,9 @@ public without sharing class JT_LdvCursorFinalizer implements Finalizer {
     }
 
     String lastError = context.getException() != null
-      ? context.getException().getTypeName() + ': ' + context.getException().getMessage()
+      ? context.getException().getTypeName() +
+        ': ' +
+        context.getException().getMessage()
       : 'Unhandled exception - no exception detail available';
     handleFailure(checkpointId, lastError);
   }

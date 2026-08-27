@@ -32,7 +32,10 @@ public without sharing class JT_LdvCursorQueueable implements Queueable {
       WITH SYSTEM_MODE
     ];
 
-    if (checkpoint.JT_Status__c == 'Aborted' || checkpoint.JT_Status__c == 'Completed') {
+    if (
+      checkpoint.JT_Status__c == 'Aborted' ||
+      checkpoint.JT_Status__c == 'Completed'
+    ) {
       return;
     }
 
@@ -49,7 +52,9 @@ public without sharing class JT_LdvCursorQueueable implements Queueable {
       ? AccessLevel.USER_MODE
       : AccessLevel.SYSTEM_MODE;
 
-    String baseQuery = JT_DataSelector.getBaseQuery(checkpoint.JT_ConfigDevName__c);
+    String baseQuery = JT_DataSelector.getBaseQuery(
+      checkpoint.JT_ConfigDevName__c
+    );
 
     Integer position = (Integer) checkpoint.JT_CursorPosition__c;
     Integer chunkSize = (Integer) checkpoint.JT_ChunkSize__c;
@@ -78,8 +83,8 @@ public without sharing class JT_LdvCursorQueueable implements Queueable {
     Boolean isDone = newPosition >= totalSize || batch.isEmpty();
 
     checkpoint.JT_CursorPosition__c = newPosition;
-    checkpoint.JT_RecordsProcessed__c = (Integer) checkpoint.JT_RecordsProcessed__c +
-      batch.size();
+    checkpoint.JT_RecordsProcessed__c =
+      (Integer) checkpoint.JT_RecordsProcessed__c + batch.size();
     checkpoint.JT_LastCheckpointAt__c = System.now();
     checkpoint.JT_RetryCount__c = 0;
     checkpoint.JT_Status__c = isDone ? 'Completed' : 'InProgress';

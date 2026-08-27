@@ -180,6 +180,7 @@ import deleteFailedLabel from "@salesforce/label/c.JT_jtQueryViewer_deleteFailed
 import configurationDeletedLabel from "@salesforce/label/c.JT_jtQueryViewer_configurationDeleted";
 import executionErrorLabel from "@salesforce/label/c.JT_jtQueryViewer_executionError";
 import queryErrorLabel from "@salesforce/label/c.JT_jtQueryViewer_queryError";
+import riskAssessmentFailedLabel from "@salesforce/label/c.JT_jtQueryViewer_riskAssessmentFailed";
 import errorUpdatingSettingsLabel from "@salesforce/label/c.JT_jtQueryViewer_errorUpdatingSettings";
 import testExecutionTimeoutLabel from "@salesforce/label/c.JT_jtQueryViewer_testExecutionTimeout";
 import testExecutionTimeoutMessageLabel from "@salesforce/label/c.JT_jtQueryViewer_testExecutionTimeoutMessage";
@@ -520,6 +521,7 @@ export default class JtQueryViewer extends LightningElement {
     configurationDeleted: configurationDeletedLabel,
     executionError: executionErrorLabel,
     queryError: queryErrorLabel,
+    riskAssessmentFailed: riskAssessmentFailedLabel,
     errorUpdatingSettings: errorUpdatingSettingsLabel,
     testExecutionTimeout: testExecutionTimeoutLabel,
     testExecutionTimeoutMessage: testExecutionTimeoutMessageLabel,
@@ -2841,9 +2843,18 @@ export default class JtQueryViewer extends LightningElement {
           this.executeQueryNormal();
         }
       })
-      .catch(() => {
-        // If assessment fails, proceed with caution (execute normally)
-        this.executeQueryNormal();
+      .catch((error) => {
+        // Fail closed: a risk assessment failure is itself evidence the query may be
+        // expensive/unselective, so it must never silently fall through to an unbounded
+        // executeQueryNormal(). Surface a blocking error instead.
+        this.isLoading = false;
+        this.showError = true;
+        this.errorMessage = error.body?.message || this.labels.unknownError;
+        showErrorToast(
+          this,
+          this.labels.riskAssessmentFailed,
+          this.errorMessage
+        );
       })
       .finally(() => {
         this.isAssessingRisk = false;

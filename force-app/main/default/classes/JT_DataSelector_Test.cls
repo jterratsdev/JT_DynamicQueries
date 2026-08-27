@@ -934,6 +934,29 @@ private class JT_DataSelector_Test {
   }
 
   /**
+   * @description countRecordsInternal must handle a bind value containing a single quote
+   * safely via Database.countQueryWithBinds, with no manual literal escaping/interpolation.
+   */
+  @IsTest
+  static void testCountRecordsForConfigHandlesApostropheInBindValueSafely() {
+    insert new Account(Name = 'O\'Brien Test Account');
+
+    Test.startTest();
+    Integer count = JT_DataSelector.countRecordsForConfig(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'O\'Brien Test Account' },
+      true
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      1,
+      count,
+      'A bind value containing a single quote must be counted safely without manual escaping'
+    );
+  }
+
+  /**
    * @description Test countRecordsForConfig without bindings
    * @author Jaime Terrats | 12-13-2025
    **/
@@ -1183,23 +1206,35 @@ private class JT_DataSelector_Test {
   }
 
   /**
-   * @description Test getRecordsWithAutoStrategy with COUNT failure (fallback to standard query)
+   * @description A COUNT failure must fail closed with JT_LdvRiskAssessmentException, never
+   * fall back to an unbounded getRecords() call - a COUNT failure is itself evidence the
+   * query may be expensive or unselective.
    */
   @IsTest
-  static void testGetRecordsWithAutoStrategyCountFailure() {
-    // This test verifies fallback when COUNT query fails
-    Test.startTest();
+  static void testGetRecordsWithAutoStrategyFailsClosedOnCountFailure() {
     JT_DataSelector.AutoStrategyParams params = new JT_DataSelector.AutoStrategyParams();
     params.devName = 'Test_Record';
     params.enforceSecurity = true;
-    params.bindings = new Map<String, Object>{ 'name' => 'Test Account' };
+    // A List bind against a scalar "=" comparison forces Database.countQueryWithBinds to throw.
+    params.bindings = new Map<String, Object>{
+      'name' => new List<Object>{ 'a', 'b' }
+    };
     params.threshold = 50000;
     params.processor = null;
-    List<SObject> results = JT_DataSelector.getRecordsWithAutoStrategy(params);
+
+    Boolean threwRiskAssessmentException = false;
+    Test.startTest();
+    try {
+      JT_DataSelector.getRecordsWithAutoStrategy(params);
+    } catch (JT_LdvRiskAssessmentException e) {
+      threwRiskAssessmentException = true;
+    }
     Test.stopTest();
 
-    // Should fallback to standard query if COUNT fails
-    System.assertNotEquals(null, results, 'Results should not be null');
+    Assert.isTrue(
+      threwRiskAssessmentException,
+      'A COUNT failure must fail closed with JT_LdvRiskAssessmentException, never fall back to an unbounded query'
+    );
   }
 
   /**

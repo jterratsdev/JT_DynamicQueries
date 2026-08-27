@@ -99,7 +99,10 @@ private class JT_LdvCursorQueueable_Test {
     update checkpoint;
 
     Test.startTest();
-    JT_LdvCursorFinalizer.handleFailure(checkpoint.Id, 'Simulated failure for test');
+    JT_LdvCursorFinalizer.handleFailure(
+      checkpoint.Id,
+      'Simulated failure for test'
+    );
     Test.stopTest();
 
     JT_LDV_Checkpoint__c failed = [
@@ -130,7 +133,10 @@ private class JT_LdvCursorQueueable_Test {
       'JT_LdvCountingProcessor'
     );
 
-    JT_LdvCursorFinalizer.handleFailure(checkpoint.Id, 'Simulated transient failure');
+    JT_LdvCursorFinalizer.handleFailure(
+      checkpoint.Id,
+      'Simulated transient failure'
+    );
 
     JT_LDV_Checkpoint__c retrying = [
       SELECT JT_Status__c

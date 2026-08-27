@@ -1109,7 +1109,8 @@ public inherited sharing class JT_DataSelector {
     );
 
     AccessLevel accessMode = getAccessLevel(enforceSecurity);
-    Integer effectiveBatchSize = batchSize != null && batchSize > 0
+    Integer effectiveBatchSize = batchSize != null &&
+      batchSize > 0
       ? batchSize
       : 200;
 
@@ -1577,49 +1578,13 @@ public inherited sharing class JT_DataSelector {
     // Use appropriate access level
     AccessLevel accessMode = getAccessLevel(enforceSecurity);
 
-    // Replace bind variables in the query string for Database.countQuery()
-    // Database.countQuery() doesn't support bindings, so we must replace them with literal values
-    String finalQuery = countQuery;
-    if (filteredBindings != null && !filteredBindings.isEmpty()) {
-      for (String key : filteredBindings.keySet()) {
-        Object value = filteredBindings.get(key);
-        String replacement = '';
-
-        if (value instanceof String) {
-          replacement = '\'' + String.escapeSingleQuotes((String) value) + '\'';
-        } else if (value instanceof Date) {
-          replacement = String.valueOf((Date) value);
-        } else if (value instanceof Datetime) {
-          replacement = ((Datetime) value)
-            .format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
-        } else if (
-          value instanceof Boolean ||
-          value instanceof Integer ||
-          value instanceof Decimal
-        ) {
-          replacement = String.valueOf(value);
-        } else if (value instanceof List<Object>) {
-          List<Object> listValue = (List<Object>) value;
-          List<String> escapedValues = new List<String>();
-          for (Object item : listValue) {
-            if (item instanceof String) {
-              escapedValues.add(
-                '\'' + String.escapeSingleQuotes((String) item) + '\''
-              );
-            } else {
-              escapedValues.add(String.valueOf(item));
-            }
-          }
-          replacement = '(' + String.join(escapedValues, ',') + ')';
-        } else {
-          replacement = String.valueOf(value);
-        }
-
-        finalQuery = finalQuery.replaceAll(':' + key + '\\b', replacement);
-      }
-    }
-
-    return Database.countQuery(finalQuery, accessMode);
+    // Bind-safe: Database.countQueryWithBinds accepts the bind map directly, the same way
+    // Database.queryWithBinds already works elsewhere in this class - no literal interpolation.
+    return Database.countQueryWithBinds(
+      countQuery,
+      filteredBindings,
+      accessMode
+    );
   }
 
   /**
@@ -1658,7 +1623,9 @@ public inherited sharing class JT_DataSelector {
       ? threshold
       : 50000;
 
-    // Step 1: Count records
+    // Step 1: Count records. A COUNT failure is evidence the query may be expensive or
+    // unselective - it must never fall through to an unbounded getRecords() call. The caller
+    // is required to handle JT_LdvRiskAssessmentException explicitly.
     Integer recordCount;
     try {
       recordCount = countRecordsInternal(
@@ -1667,8 +1634,12 @@ public inherited sharing class JT_DataSelector {
         enforceSecurity
       );
     } catch (Exception e) {
-      // If COUNT fails, fall back to standard query
-      return getRecords(devName, enforceSecurity, mergedBindings);
+      throw new JT_LdvRiskAssessmentException(
+        'Unable to assess record count/risk for "' +
+          devName +
+          '": ' +
+          e.getMessage()
+      );
     }
 
     // Step 2: Decide strategy based on count

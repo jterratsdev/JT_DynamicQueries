@@ -597,20 +597,23 @@ public with sharing class JT_QueryViewerController {
       Integer estimatedCount = 0;
       String finalCountQuery = null;
       try {
-        // Replace bind variables in COUNT query (countQuery() doesn't support bindings)
-        finalCountQuery = replaceBindVariables(countQuery, countBindings);
+        // Remove conditions for empty/missing bindings, then let Database.countQueryWithBinds
+        // bind the rest directly - no bind value is ever interpolated into the query string.
+        finalCountQuery = removeEmptyBindingConditions(
+          countQuery,
+          countBindings
+        );
 
         // Remove Long Text Area field conditions that cannot be filtered in COUNT queries
         finalCountQuery = removeLongTextAreaConditions(finalCountQuery);
 
         System.debug(LoggingLevel.DEBUG, 'COUNT query: ' + finalCountQuery);
-        System.debug(
-          LoggingLevel.DEBUG,
-          'COUNT bindings: ' + JSON.serialize(countBindings)
-        );
 
-        // Use countQuery() instead of queryWithBinds for COUNT queries
-        estimatedCount = Database.countQuery(finalCountQuery);
+        estimatedCount = Database.countQueryWithBinds(
+          finalCountQuery,
+          countBindings,
+          AccessLevel.USER_MODE
+        );
 
         System.debug(LoggingLevel.DEBUG, 'COUNT result: ' + estimatedCount);
       } catch (Exception e) {
@@ -680,10 +683,6 @@ public with sharing class JT_QueryViewerController {
             LoggingLevel.WARN,
             'COUNT query that failed: ' +
             (finalCountQuery != null ? finalCountQuery : 'null')
-          );
-          System.debug(
-            LoggingLevel.WARN,
-            'COUNT bindings that failed: ' + JSON.serialize(countBindings)
           );
 
           // Check if query has WHERE clause with specific filters
@@ -755,12 +754,14 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
-   * @description Replaces bind variables in query with actual values for countQuery()
+   * @description Removes WHERE conditions for bindings that are missing/empty, leaving the
+   * rest of the query's bind placeholders intact for Database.countQueryWithBinds - no bind
+   * value is ever interpolated into the query string.
    * @param query The SOQL query string with bind variables
    * @param bindings The map of bind variables
-   * @return String query with bind variables replaced
+   * @return String Query with empty-binding conditions removed
    **/
-  private static String replaceBindVariables(
+  private static String removeEmptyBindingConditions(
     String query,
     Map<String, Object> bindings
   ) {
@@ -802,42 +803,6 @@ public with sharing class JT_QueryViewerController {
 
       if (shouldRemove) {
         result = removeConditionForBinding(result, bindingKey);
-      }
-    }
-
-    // Now replace remaining bindings with their values
-    if (bindings != null && !bindings.isEmpty()) {
-      for (String key : bindings.keySet()) {
-        final Object value = bindings.get(key);
-
-        // Skip empty strings and null values
-        if (value == null) {
-          continue;
-        }
-
-        if (value instanceof String && String.isBlank((String) value)) {
-          continue;
-        }
-
-        if (value instanceof List<Object>) {
-          List<Object> listValue = (List<Object>) value;
-          if (listValue.isEmpty()) {
-            continue;
-          }
-        }
-
-        final Object convertedValue = convertBindingValueForQuery(
-          result,
-          key,
-          value
-        );
-        final String escapedValue = escapeBindingValue(convertedValue);
-
-        // Replace binding with optional space after colon: ":name" or ": name"
-        result = result.replaceAll(
-          ':\\s*' + Pattern.quote(key) + '\\b',
-          escapedValue
-        );
       }
     }
 

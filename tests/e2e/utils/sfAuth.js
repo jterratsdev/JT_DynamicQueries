@@ -37,7 +37,10 @@ function getSFSession() {
       FORCE_COLOR: "0",
       SF_LOG_LEVEL: "ERROR", // Only show errors, suppress info logs
       SF_DISABLE_LOG_FILE: "true",
-      SFDX_DISABLE_LOG_FILE: "true"
+      SFDX_DISABLE_LOG_FILE: "true",
+      // Newer sf CLI versions redact accessToken from --json output by default, which breaks
+      // frontdoor.jsp session injection below - this test helper needs the real token.
+      SF_TEMP_SHOW_SECRETS: "true"
     };
 
     try {
