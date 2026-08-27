@@ -69,6 +69,14 @@ Thank you for your interest in contributing! This document provides guidelines a
    npm run test:e2e
    ```
 
+### Troubleshooting
+
+**Pre-commit hook fails with `EPERM` on `~/.sf/*.log`:** the Husky pre-commit hook runs
+`sf code-analyzer run`, which writes a log file under `~/.sf`. In some environments (restrictive
+file permissions, certain CI runners) this write fails with `EPERM`. The `lint` and `lint:staged`
+npm scripts set `SF_DISABLE_LOG_FILE=true` (and `SFDX_DISABLE_LOG_FILE=true`) to disable SF CLI
+file logging entirely, avoiding the error regardless of `~/.sf` permissions.
+
 ---
 
 ## 📋 Development Workflow

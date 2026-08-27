@@ -5,6 +5,18 @@ All notable changes to the Dynamic Query Framework project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🔧 Technical Debt
+
+- **Husky Pre-commit Hook Scanner Permissions (#32)**
+  - Fixed the `EPERM` error on `~/.sf/sf-<date>.log` raised by `sf code-analyzer run` during
+    `npm run lint` / `npm run lint:staged`, superseding the `--no-verify` workaround noted in `[2.1.0]`
+  - `lint` and `lint:staged` npm scripts now set `SF_DISABLE_LOG_FILE=true SFDX_DISABLE_LOG_FILE=true`,
+    disabling SF CLI file logging entirely instead of relying on `~/.sf` directory permissions
+  - `tests/e2e/utils/sfAuth.js`: replaced the no-op `SF_LOG_PATH` env var (not read by `@salesforce/core`)
+    with the same `SF_DISABLE_LOG_FILE`/`SFDX_DISABLE_LOG_FILE` fix; removed the dead temp-log-dir creation code
+
 ## [3.0.0] - 2026-04-26
 
 ### 🎭 Persona-Based Run As Testing (US-025)
