@@ -3,8 +3,9 @@
 # ADR-001: Bounded, Resumable Large-Data-Volume (LDV) Processing
 
 **Author:** Salesforce Servicios Profesionales
-**Version:** 1.9
-**Status:** Proposed — awaiting developer sign-off before implementation
+**Version:** 2.0
+**Status:** Partially Implemented — sub-PRs 1–4 and 6 delivered; sub-PR 5 grouped with
+sub-PR 4's deferred `jtQueryViewer`/`jtQueryResults` UI cutover (see Consequences/§7)
 **Related:** GitHub Issue #43
 **API Version Target:** 67.0 (per `sfdx-project.json` → `sourceApiVersion`)
 
@@ -607,12 +608,19 @@ should land before the chained Queueable is exposed to end users).
    in-memory copy" with "fetch bounded pages on demand," and should land together once that
    cutover gets its own dedicated pass (and ideally a Jest harness for `jtQueryResults`,
    which doesn't exist for any component in this codebase yet - see sub-PR 6 doc note).
-6. **Doc corrections.** Update ApexDoc on `JT_DataSelector`/`JT_QueryViewerController`,
-   `docs/README.md`, `docs/architecture/diagrams.md`, and `docs/TECH_DEBT.md` to correctly
-   distinguish UI pagination, server pagination, Batch Apex, Queueable Apex, and Apex
-   Cursors, and to remove the now-false "Beta" Cursor claim once sub-PR 1 lands (or adjust
-   docs immediately if sub-PR 1 is delayed, so the docs are never wrong for longer than
-   necessary).
+6. **Doc corrections - delivered.** Checked every doc this ADR named
+   (`docs/README.md`, `docs/architecture/diagrams.md`, `docs/TECH_DEBT.md`,
+   `docs/TECH_DEBT_ISSUES.md`, `docs/FEATURES_v2.md`, `docs/APPEXCHANGE_PREPARATION.md`,
+   root `README.md`): none of them described the cursor/batch mechanism specifically, so
+   there was nothing false to correct in them (the false "Apex Cursors (Beta)" claim lived
+   only in ApexDoc, already corrected as part of sub-PR 1's code change). Corrected two
+   remaining docstrings this ADR's own audit had flagged as misleading:
+   `executeQueryWithBatchProcessing` now says explicitly that it uses a real cursor
+   internally but is still single-transaction and does not bound what the client receives;
+   `assessQueryRisk` (previously undocumented) now states its WHERE+binding heuristic is a
+   documented, accepted limitation for `SMALL`/interactive paths only, not real Query Plan
+   evidence. Added a `[Unreleased]` `CHANGELOG.md` entry summarizing sub-PRs 1–5 and pointing
+   to this ADR for the full design/deferral record.
 
 Each sub-PR must independently satisfy: exactly one `Assert` per test method (modern
 `Assert` class), `@TestSetup` + `System.runAs()` with Permission-Set-Group test users, and

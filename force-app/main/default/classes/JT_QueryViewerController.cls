@@ -546,6 +546,17 @@ public with sharing class JT_QueryViewerController {
     return query != null && query.containsIgnoreCase('(SELECT');
   }
 
+  /**
+   * @description Estimates whether a query is safe to run synchronously. When the COUNT
+   * query itself fails, this falls back to a heuristic ("has a bound WHERE clause" implies
+   * lower risk) - presence of a bound filter is not evidence of selectivity, so this
+   * heuristic is a documented, accepted limitation for SMALL/interactive queries only. It is
+   * not real Query Plan/selectivity evidence (see
+   * docs/adr/ADR-001-bounded-resumable-ldv-processing.md §5, deferred).
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @return QueryRiskAssessment Estimated risk level and recommendation
+   */
   @AuraEnabled
   public static QueryRiskAssessment assessQueryRisk(
     String devName,
@@ -1565,11 +1576,16 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
-   * @description Executes query using batch/cursor processing for large result sets
+   * @description Fetches records via JT_DataSelector.processRecordsWithCursor, which uses a
+   * real Database.Cursor internally (bounded per-chunk fetches), but still runs synchronously
+   * in one transaction and returns the complete result to the client in one QueryResult - it
+   * is not yet multi-transaction/chained (see JT_LdvCursorQueueable and
+   * docs/adr/ADR-001-bounded-resumable-ldv-processing.md) and does not bound what the client
+   * receives.
    * @author Jaime Terrats | 12-02-2025
    * @param devName Configuration developer name
    * @param bindingsJson JSON string with bindings
-   * @param batchSize Records per batch (default: 200)
+   * @param batchSize Records per chunk fetched from the cursor (default: 200)
    * @return QueryResult
    **/
   @AuraEnabled

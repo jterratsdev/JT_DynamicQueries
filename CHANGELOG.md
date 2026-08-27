@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+
+- **LDV Cursor Processing (#43)**
+  - `JT_DataSelector.processRecordsWithCursor` now uses a real `Database.Cursor`
+    (`Database.getCursorWithBinds` + `Cursor.fetch(position, count)`) instead of loading the
+    full result into memory and slicing it — the ApexDoc's "Apex Cursors (Beta)" claim is now
+    true, not aspirational
+  - Added `JT_LDV_Checkpoint__c` to persist LDV operation identity, cursor position, status,
+    retry count, and processing metrics
+  - Added `JT_LdvCursorQueueable` + `JT_LdvCursorFinalizer`: chained, multi-transaction cursor
+    processing with bounded retry/backoff, failing closed (terminal `Failed` status) on retry
+    exhaustion instead of looping forever
+  - Added `JT_LdvCheckpointPurgeBatch` to delete old checkpoint rows (manual admin scheduling
+    step — see CONTRIBUTING.md)
+  - `JT_DataSelector.getRecordsWithAutoStrategy` no longer falls back to an unbounded
+    `getRecords()` call when the COUNT query fails; it now throws
+    `JT_LdvRiskAssessmentException`, which callers must handle explicitly
+  - `countRecordsInternal` and `JT_QueryViewerController.assessQueryRisk`'s count path now use
+    `Database.countQueryWithBinds` instead of regex + manual literal-interpolation/escaping
+  - Removed `System.debug` calls that logged raw bind values in `assessQueryRisk`
+  - `jtQueryViewer.js`: `assessQueryRiskAndExecute`'s risk-assessment failure path now shows a
+    blocking error toast instead of silently falling through to an unbounded query
+  - Added `JT_DataSelector.getRecordsPage`/`JT_QueryViewerController.getQueryResultsPage`: a
+    bounded, forward-paginated (`first`/`after`/`hasNextPage`/`endCursor`) query contract backed
+    by a real `Database.Cursor`, ready for `jtQueryViewer`/`jtQueryResults` to consume in a
+    follow-up (not yet wired into the UI — see `docs/adr/ADR-001-bounded-resumable-ldv-processing.md`)
+  - See `docs/adr/ADR-001-bounded-resumable-ldv-processing.md` for the full design, what's
+    deliberately deferred, and why
+
 ### 🔧 Technical Debt
 
 - **Husky Pre-commit Hook Scanner Permissions (#32)**

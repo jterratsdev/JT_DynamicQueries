@@ -1186,10 +1186,9 @@ public inherited sharing class JT_DataSelector {
     );
     AccessLevel accessMode = getAccessLevel(enforceSecurity);
 
-    Integer effectivePosition = position != null && position > 0
-      ? position
-      : 0;
-    Integer effectivePageSize = pageSize != null && pageSize > 0
+    Integer effectivePosition = position != null && position > 0 ? position : 0;
+    Integer effectivePageSize = pageSize != null &&
+      pageSize > 0
       ? pageSize
       : 10;
 
