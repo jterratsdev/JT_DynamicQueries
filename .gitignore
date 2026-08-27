@@ -15,6 +15,7 @@ site/dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
 
 # Environment
 .env
@@ -44,3 +45,30 @@ temp_sf_logs/
 # Salesforce CLI generated artifacts
 .sfdx/tools/vector-db/
 .sfdx/mcp-tools/index.json
+
+# >>> setup-agents (managed) >>>
+# Regenerable / heavy / per-user setup-agents artifacts — safe to delete and re-generate.
+# Authored state (state/, config.json, rules/, skills/, sf-skills/, playbooks/,
+# project-knowledge.md, insights/) is intentionally NOT ignored.
+.setup-agents/references/
+.setup-agents/sf-metadata-index.json
+.setup-agents/chat-history/
+.setup-agents/chat-debug.jsonl
+.setup-agents/tmp/
+
+# Proprietary setup-agents generated files (customer repository policy).
+/.claude/agents/developer.md
+/.claude/agents/qa.md
+/.claude/agents/ta.md
+/.claude/rules/sub-agent-protocol.md
+/.cursor/rules/agent-guidelines.mdc
+/.cursor/rules/developer-standards.mdc
+/.cursor/rules/qa-standards.mdc
+/.cursor/rules/salesforce-standards.mdc
+/.cursor/rules/setup-agents-autonomous.mdc
+/.cursor/rules/sub-agent-protocol.mdc
+/.cursor/rules/ta-standards.mdc
+/.setup-agents/playbooks/**
+/.setup-agents/rules/**
+/.setup-agents/skills/**
+# <<< setup-agents (managed) <<<
