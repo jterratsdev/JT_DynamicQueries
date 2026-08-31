@@ -69,6 +69,35 @@ Thank you for your interest in contributing! This document provides guidelines a
    npm run test:e2e
    ```
 
+### Troubleshooting
+
+**Pre-commit hook fails with `EPERM` on `~/.sf/*.log`:** the Husky pre-commit hook runs
+`sf code-analyzer run`, which writes a log file under `~/.sf`. In some environments (restrictive
+file permissions, certain CI runners) this write fails with `EPERM`. The `lint` and `lint:staged`
+npm scripts set `SF_DISABLE_LOG_FILE=true` (and `SFDX_DISABLE_LOG_FILE=true`) to disable SF CLI
+file logging entirely, avoiding the error regardless of `~/.sf` permissions.
+
+### Scheduled Jobs (post-install)
+
+**LDV checkpoint purge (`JT_LdvCheckpointPurgeBatch`):** LDV cursor operations (see
+`docs/adr/ADR-001-bounded-resumable-ldv-processing.md`) persist progress to
+`JT_LDV_Checkpoint__c`. Completed/Failed rows older than
+`JT_DynamicQuerySettings__c.JT_LdvCheckpointRetentionDays__c` (default 30 days) are eligible
+for deletion, but **nothing schedules this automatically** — an admin must schedule it once
+after installing or upgrading the package, from Developer Console → Debug → Open Execute
+Anonymous Window:
+
+```apex
+System.schedule(
+  'JT LDV Checkpoint Purge',
+  '0 0 2 * * ?', // daily at 2 AM org time
+  new JT_LdvCheckpointPurgeBatch()
+);
+```
+
+Without this step, `JT_LDV_Checkpoint__c` rows accumulate indefinitely. The Setup Wizard
+(`jtSetupWizard`) surfaces a reminder for this step, but does not run it for you.
+
 ---
 
 ## 📋 Development Workflow

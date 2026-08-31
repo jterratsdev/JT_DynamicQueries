@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>JT_OperationId__c</fullName>
+    <caseSensitive>true</caseSensitive>
+    <description
+  >Idempotency key for the whole LDV operation. Retried or duplicated chunk enqueues for the same operation resolve to this same checkpoint row via upsert.</description>
+    <externalId>true</externalId>
+    <label>Operation Id</label>
+    <length>36</length>
+    <required>true</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>true</unique>
+</CustomField>

@@ -934,6 +934,29 @@ private class JT_DataSelector_Test {
   }
 
   /**
+   * @description countRecordsInternal must handle a bind value containing a single quote
+   * safely via Database.countQueryWithBinds, with no manual literal escaping/interpolation.
+   */
+  @IsTest
+  static void testCountRecordsForConfigHandlesApostropheInBindValueSafely() {
+    insert new Account(Name = 'O\'Brien Test Account');
+
+    Test.startTest();
+    Integer count = JT_DataSelector.countRecordsForConfig(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'O\'Brien Test Account' },
+      true
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      1,
+      count,
+      'A bind value containing a single quote must be counted safely without manual escaping'
+    );
+  }
+
+  /**
    * @description Test countRecordsForConfig without bindings
    * @author Jaime Terrats | 12-13-2025
    **/
@@ -1183,23 +1206,35 @@ private class JT_DataSelector_Test {
   }
 
   /**
-   * @description Test getRecordsWithAutoStrategy with COUNT failure (fallback to standard query)
+   * @description A COUNT failure must fail closed with JT_LdvRiskAssessmentException, never
+   * fall back to an unbounded getRecords() call - a COUNT failure is itself evidence the
+   * query may be expensive or unselective.
    */
   @IsTest
-  static void testGetRecordsWithAutoStrategyCountFailure() {
-    // This test verifies fallback when COUNT query fails
-    Test.startTest();
+  static void testGetRecordsWithAutoStrategyFailsClosedOnCountFailure() {
     JT_DataSelector.AutoStrategyParams params = new JT_DataSelector.AutoStrategyParams();
     params.devName = 'Test_Record';
     params.enforceSecurity = true;
-    params.bindings = new Map<String, Object>{ 'name' => 'Test Account' };
+    // A List bind against a scalar "=" comparison forces Database.countQueryWithBinds to throw.
+    params.bindings = new Map<String, Object>{
+      'name' => new List<Object>{ 'a', 'b' }
+    };
     params.threshold = 50000;
     params.processor = null;
-    List<SObject> results = JT_DataSelector.getRecordsWithAutoStrategy(params);
+
+    Boolean threwRiskAssessmentException = false;
+    Test.startTest();
+    try {
+      JT_DataSelector.getRecordsWithAutoStrategy(params);
+    } catch (JT_LdvRiskAssessmentException e) {
+      threwRiskAssessmentException = true;
+    }
     Test.stopTest();
 
-    // Should fallback to standard query if COUNT fails
-    System.assertNotEquals(null, results, 'Results should not be null');
+    Assert.isTrue(
+      threwRiskAssessmentException,
+      'A COUNT failure must fail closed with JT_LdvRiskAssessmentException, never fall back to an unbounded query'
+    );
   }
 
   /**
@@ -1969,5 +2004,163 @@ private class JT_DataSelector_Test {
         acc.AnnualRevenue
       );
     }
+  }
+
+  /**
+   * @description processRecordsWithCursor must use the real
+   * Database.Cursor API and persist a Completed JT_LDV_Checkpoint__c row on success.
+   */
+  @IsTest
+  static void testProcessRecordsWithCursorCreatesCompletedCheckpoint() {
+    TestCursorProcessor processor = new TestCursorProcessor();
+    JT_DataSelector.CursorProcessingParams params = new JT_DataSelector.CursorProcessingParams(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      processor
+    );
+
+    Test.startTest();
+    JT_DataSelector.processRecordsWithCursor(params);
+    Test.stopTest();
+
+    JT_LDV_Checkpoint__c checkpoint = [
+      SELECT JT_Status__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_ConfigDevName__c = 'Test_Record'
+      ORDER BY CreatedDate DESC
+      LIMIT 1
+    ];
+    Assert.areEqual(
+      'Completed',
+      checkpoint.JT_Status__c,
+      'processRecordsWithCursor should mark its checkpoint row Completed on success'
+    );
+  }
+
+  /**
+   * @description The count processRecordsWithCursor returns must match what the
+   * CursorProcessor actually received from Cursor.fetch(), proving the chunking loop is real.
+   */
+  @IsTest
+  static void testProcessRecordsWithCursorReturnsProcessorRecordCount() {
+    TestCursorProcessor processor = new TestCursorProcessor();
+    JT_DataSelector.CursorProcessingParams params = new JT_DataSelector.CursorProcessingParams(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      processor
+    );
+
+    Test.startTest();
+    Integer totalProcessed = JT_DataSelector.processRecordsWithCursor(params);
+    Test.stopTest();
+
+    Assert.areEqual(
+      processor.totalRecordsProcessed,
+      totalProcessed,
+      'processRecordsWithCursor should return the same count the CursorProcessor received'
+    );
+  }
+
+  /**
+   * @description startCursorOperation must persist a Pending checkpoint
+   * with the total record count already known, without fetching or processing any records.
+   */
+  @IsTest
+  static void testStartCursorOperationPersistsPendingCheckpointWithoutProcessing() {
+    Test.startTest();
+    JT_LDV_Checkpoint__c checkpoint = JT_DataSelector.startCursorOperation(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      200,
+      'JT_LdvCountingProcessor'
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      'Pending',
+      checkpoint.JT_Status__c,
+      'startCursorOperation should persist a Pending checkpoint and defer all fetching to the queueable chain'
+    );
+  }
+
+  /**
+   * @description getRecordsPage must return a bounded page and correctly report more pages
+   * remain when the total exceeds the page size.
+   */
+  @IsTest
+  static void testGetRecordsPageReportsHasNextPageWhenMoreRecordsRemain() {
+    List<Account> accounts = new List<Account>();
+    for (Integer i = 0; i < 5; i++) {
+      accounts.add(new Account(Name = 'Test Account'));
+    }
+    insert accounts;
+
+    Test.startTest();
+    JT_DataSelector.QueryPageResult page = JT_DataSelector.getRecordsPage(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      0,
+      2
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      true,
+      page.hasNextPage,
+      'A 5-record result with page size 2 must report more pages remain after the first page'
+    );
+  }
+
+  /**
+   * @description getRecordsPage must report hasNextPage=false once the last page is fetched.
+   */
+  @IsTest
+  static void testGetRecordsPageReportsNoNextPageOnLastPage() {
+    List<Account> accounts = new List<Account>();
+    for (Integer i = 0; i < 5; i++) {
+      accounts.add(new Account(Name = 'Test Account'));
+    }
+    insert accounts;
+
+    Test.startTest();
+    JT_DataSelector.QueryPageResult page = JT_DataSelector.getRecordsPage(
+      'Test_Record',
+      new Map<String, Object>{ 'name' => 'Test Account' },
+      true,
+      4,
+      2
+    );
+    Test.stopTest();
+
+    Assert.areEqual(
+      false,
+      page.hasNextPage,
+      'Fetching the last remaining record must report no further pages'
+    );
+  }
+
+  /**
+   * @description generateOperationId must produce a UUID-v4-shaped identifier that fits
+   * JT_LDV_Checkpoint__c.JT_OperationId__c (Text(36), External Id, Unique).
+   */
+  @IsTest
+  static void testGenerateOperationIdProducesUuidShapedString() {
+    Test.startTest();
+    String operationId = JT_DataSelector.generateOperationId();
+    Test.stopTest();
+
+    Assert.isTrue(
+      Pattern.matches(
+        '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+        operationId
+      ),
+      'generateOperationId should return a UUID-v4-shaped 36 character identifier'
+    );
   }
 }

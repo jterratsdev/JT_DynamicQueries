@@ -11,7 +11,7 @@
   "name": "JT_DynamicQueries",
   "namespace": "",
   "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "65.0",
+  "sourceApiVersion": "67.0",
   "packageAliases": {
     "JT_DynamicQueries": "0Ho..."
   },

@@ -67,8 +67,12 @@ test.describe("Accessibility Tests - WCAG 2.1 AA", () => {
   test("Main interface should not have accessibility violations", async ({
     page
   }) => {
+    // Scoped to this app's own component - an unscoped scan also picks up violations in
+    // Salesforce's own platform chrome (e.g. the Slack integration widget in the global
+    // header), which this project doesn't own and can't fix.
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      .include("c-jt-query-viewer")
       .analyze();
 
     expect(accessibilityScanResults.violations).toEqual([]);
@@ -95,6 +99,7 @@ test.describe("Accessibility Tests - WCAG 2.1 AA", () => {
   }) => {
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa"])
+      .include("c-jt-query-viewer")
       .analyze();
 
     const nameViolations = accessibilityScanResults.violations.filter((v) =>
@@ -736,6 +741,7 @@ test.describe("Accessibility Tests - WCAG 2.1 AAA (Optional)", () => {
   test("AAA: Enhanced color contrast (7:1 ratio)", async ({ page }) => {
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(["wcag2aaa"])
+      .include("c-jt-query-viewer")
       .analyze();
 
     const contrastViolations = accessibilityScanResults.violations.filter(

@@ -72,10 +72,47 @@ public without sharing class JT_SetupWizardController {
       : Label.JT_SetupWizardController_toolingApiConnectionFailed;
     status.steps.add(testStep);
 
-    // Calculate overall status
-    status.allStepsComplete = testStep.isComplete;
+    // Step 2: LDV Checkpoint Purge job scheduled (optional - manual admin step)
+    final SetupStepStatus ldvPurgeStep = new SetupStepStatus();
+    ldvPurgeStep.stepName = Label.JT_SetupWizardController_stepNameLdvPurge;
+    ldvPurgeStep.isRequired = false;
+    ldvPurgeStep.setupUrl = null;
+    final Boolean purgeScheduled = isLdvCheckpointPurgeScheduled();
+    ldvPurgeStep.isComplete = purgeScheduled;
+    ldvPurgeStep.statusMessage = purgeScheduled
+      ? Label.JT_SetupWizardController_ldvPurgeScheduled
+      : Label.JT_SetupWizardController_ldvPurgeNotScheduled;
+    status.steps.add(ldvPurgeStep);
+
+    // Calculate overall status from required steps only - optional steps never block it
+    Boolean allRequiredComplete = true;
+    for (SetupStepStatus step : status.steps) {
+      if (step.isRequired && !step.isComplete) {
+        allRequiredComplete = false;
+      }
+    }
+    status.allStepsComplete = allRequiredComplete;
 
     return status;
+  }
+
+  /**
+   * @description Checks whether an admin has scheduled JT_LdvCheckpointPurgeBatch
+   * (CONTRIBUTING.md "Scheduled Jobs"). Purely observational - never schedules it.
+   * @return Boolean True if a matching CronTrigger exists
+   */
+  @AuraEnabled
+  public static Boolean isLdvCheckpointPurgeScheduled() {
+    return ![
+        SELECT Id
+        FROM CronTrigger
+        WHERE
+          CronJobDetail.JobType = '7'
+          AND CronJobDetail.Name = 'JT LDV Checkpoint Purge'
+        WITH SYSTEM_MODE
+        LIMIT 1
+      ]
+      .isEmpty();
   }
 
   /**

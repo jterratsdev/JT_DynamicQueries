@@ -5,6 +5,47 @@ All notable changes to the Dynamic Query Framework project will be documented in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🐛 Bug Fixes
+
+- **LDV Cursor Processing (#43)**
+  - `JT_DataSelector.processRecordsWithCursor` now uses a real `Database.Cursor`
+    (`Database.getCursorWithBinds` + `Cursor.fetch(position, count)`) instead of loading the
+    full result into memory and slicing it — the ApexDoc's "Apex Cursors (Beta)" claim is now
+    true, not aspirational
+  - Added `JT_LDV_Checkpoint__c` to persist LDV operation identity, cursor position, status,
+    retry count, and processing metrics
+  - Added `JT_LdvCursorQueueable` + `JT_LdvCursorFinalizer`: chained, multi-transaction cursor
+    processing with bounded retry/backoff, failing closed (terminal `Failed` status) on retry
+    exhaustion instead of looping forever
+  - Added `JT_LdvCheckpointPurgeBatch` to delete old checkpoint rows (manual admin scheduling
+    step — see CONTRIBUTING.md)
+  - `JT_DataSelector.getRecordsWithAutoStrategy` no longer falls back to an unbounded
+    `getRecords()` call when the COUNT query fails; it now throws
+    `JT_LdvRiskAssessmentException`, which callers must handle explicitly
+  - `countRecordsInternal` and `JT_QueryViewerController.assessQueryRisk`'s count path now use
+    `Database.countQueryWithBinds` instead of regex + manual literal-interpolation/escaping
+  - Removed `System.debug` calls that logged raw bind values in `assessQueryRisk`
+  - `jtQueryViewer.js`: `assessQueryRiskAndExecute`'s risk-assessment failure path now shows a
+    blocking error toast instead of silently falling through to an unbounded query
+  - Added `JT_DataSelector.getRecordsPage`/`JT_QueryViewerController.getQueryResultsPage`: a
+    bounded, forward-paginated (`first`/`after`/`hasNextPage`/`endCursor`) query contract backed
+    by a real `Database.Cursor`, ready for `jtQueryViewer`/`jtQueryResults` to consume in a
+    follow-up (not yet wired into the UI — see `docs/adr/ADR-001-bounded-resumable-ldv-processing.md`)
+  - See `docs/adr/ADR-001-bounded-resumable-ldv-processing.md` for the full design, what's
+    deliberately deferred, and why
+
+### 🔧 Technical Debt
+
+- **Husky Pre-commit Hook Scanner Permissions (#32)**
+  - Fixed the `EPERM` error on `~/.sf/sf-<date>.log` raised by `sf code-analyzer run` during
+    `npm run lint` / `npm run lint:staged`, superseding the `--no-verify` workaround noted in `[2.1.0]`
+  - `lint` and `lint:staged` npm scripts now set `SF_DISABLE_LOG_FILE=true SFDX_DISABLE_LOG_FILE=true`,
+    disabling SF CLI file logging entirely instead of relying on `~/.sf` directory permissions
+  - `tests/e2e/utils/sfAuth.js`: replaced the no-op `SF_LOG_PATH` env var (not read by `@salesforce/core`)
+    with the same `SF_DISABLE_LOG_FILE`/`SFDX_DISABLE_LOG_FILE` fix; removed the dead temp-log-dir creation code
+
 ## [3.0.0] - 2026-04-26
 
 ### 🎭 Persona-Based Run As Testing (US-025)

@@ -546,6 +546,17 @@ public with sharing class JT_QueryViewerController {
     return query != null && query.containsIgnoreCase('(SELECT');
   }
 
+  /**
+   * @description Estimates whether a query is safe to run synchronously. When the COUNT
+   * query itself fails, this falls back to a heuristic ("has a bound WHERE clause" implies
+   * lower risk) - presence of a bound filter is not evidence of selectivity, so this
+   * heuristic is a documented, accepted limitation for SMALL/interactive queries only. It is
+   * not real Query Plan/selectivity evidence (see
+   * docs/adr/ADR-001-bounded-resumable-ldv-processing.md §5, deferred).
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @return QueryRiskAssessment Estimated risk level and recommendation
+   */
   @AuraEnabled
   public static QueryRiskAssessment assessQueryRisk(
     String devName,
@@ -597,20 +608,23 @@ public with sharing class JT_QueryViewerController {
       Integer estimatedCount = 0;
       String finalCountQuery = null;
       try {
-        // Replace bind variables in COUNT query (countQuery() doesn't support bindings)
-        finalCountQuery = replaceBindVariables(countQuery, countBindings);
+        // Remove conditions for empty/missing bindings, then let Database.countQueryWithBinds
+        // bind the rest directly - no bind value is ever interpolated into the query string.
+        finalCountQuery = removeEmptyBindingConditions(
+          countQuery,
+          countBindings
+        );
 
         // Remove Long Text Area field conditions that cannot be filtered in COUNT queries
         finalCountQuery = removeLongTextAreaConditions(finalCountQuery);
 
         System.debug(LoggingLevel.DEBUG, 'COUNT query: ' + finalCountQuery);
-        System.debug(
-          LoggingLevel.DEBUG,
-          'COUNT bindings: ' + JSON.serialize(countBindings)
-        );
 
-        // Use countQuery() instead of queryWithBinds for COUNT queries
-        estimatedCount = Database.countQuery(finalCountQuery);
+        estimatedCount = Database.countQueryWithBinds(
+          finalCountQuery,
+          countBindings,
+          AccessLevel.USER_MODE
+        );
 
         System.debug(LoggingLevel.DEBUG, 'COUNT result: ' + estimatedCount);
       } catch (Exception e) {
@@ -680,10 +694,6 @@ public with sharing class JT_QueryViewerController {
             LoggingLevel.WARN,
             'COUNT query that failed: ' +
             (finalCountQuery != null ? finalCountQuery : 'null')
-          );
-          System.debug(
-            LoggingLevel.WARN,
-            'COUNT bindings that failed: ' + JSON.serialize(countBindings)
           );
 
           // Check if query has WHERE clause with specific filters
@@ -755,12 +765,14 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
-   * @description Replaces bind variables in query with actual values for countQuery()
+   * @description Removes WHERE conditions for bindings that are missing/empty, leaving the
+   * rest of the query's bind placeholders intact for Database.countQueryWithBinds - no bind
+   * value is ever interpolated into the query string.
    * @param query The SOQL query string with bind variables
    * @param bindings The map of bind variables
-   * @return String query with bind variables replaced
+   * @return String Query with empty-binding conditions removed
    **/
-  private static String replaceBindVariables(
+  private static String removeEmptyBindingConditions(
     String query,
     Map<String, Object> bindings
   ) {
@@ -802,42 +814,6 @@ public with sharing class JT_QueryViewerController {
 
       if (shouldRemove) {
         result = removeConditionForBinding(result, bindingKey);
-      }
-    }
-
-    // Now replace remaining bindings with their values
-    if (bindings != null && !bindings.isEmpty()) {
-      for (String key : bindings.keySet()) {
-        final Object value = bindings.get(key);
-
-        // Skip empty strings and null values
-        if (value == null) {
-          continue;
-        }
-
-        if (value instanceof String && String.isBlank((String) value)) {
-          continue;
-        }
-
-        if (value instanceof List<Object>) {
-          List<Object> listValue = (List<Object>) value;
-          if (listValue.isEmpty()) {
-            continue;
-          }
-        }
-
-        final Object convertedValue = convertBindingValueForQuery(
-          result,
-          key,
-          value
-        );
-        final String escapedValue = escapeBindingValue(convertedValue);
-
-        // Replace binding with optional space after colon: ":name" or ": name"
-        result = result.replaceAll(
-          ':\\s*' + Pattern.quote(key) + '\\b',
-          escapedValue
-        );
       }
     }
 
@@ -1600,11 +1576,16 @@ public with sharing class JT_QueryViewerController {
   }
 
   /**
-   * @description Executes query using batch/cursor processing for large result sets
+   * @description Fetches records via JT_DataSelector.processRecordsWithCursor, which uses a
+   * real Database.Cursor internally (bounded per-chunk fetches), but still runs synchronously
+   * in one transaction and returns the complete result to the client in one QueryResult - it
+   * is not yet multi-transaction/chained (see JT_LdvCursorQueueable and
+   * docs/adr/ADR-001-bounded-resumable-ldv-processing.md) and does not bound what the client
+   * receives.
    * @author Jaime Terrats | 12-02-2025
    * @param devName Configuration developer name
    * @param bindingsJson JSON string with bindings
-   * @param batchSize Records per batch (default: 200)
+   * @param batchSize Records per chunk fetched from the cursor (default: 200)
    * @return QueryResult
    **/
   @AuraEnabled
@@ -1670,6 +1651,186 @@ public with sharing class JT_QueryViewerController {
       return result;
     } catch (Exception e) {
       return createErrorResult(e);
+    }
+  }
+
+  /**
+   * @description Starts a chained, multi-transaction LDV operation and returns immediately
+   * with its operation id - it does not wait for any chunk to complete. Poll
+   * getLdvOperationStatus(operationId) for progress. Intended for export/integration workloads
+   * whose CursorProcessor does its own side-effecting work per chunk; interactive UI browsing
+   * of results is not wired to this path yet.
+   * @author Jaime Terrats
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @param batchSize Records per chunk (default 200)
+   * @param processorClassName Fully-qualified JT_DataSelector.CursorProcessor implementation
+   * with a public no-arg constructor (e.g. JT_LdvCountingProcessor)
+   * @return String The operation id (JT_LDV_Checkpoint__c.JT_OperationId__c) to poll
+   **/
+  @AuraEnabled
+  public static String startLdvBulkOperation(
+    String devName,
+    String bindingsJson,
+    Integer batchSize,
+    String processorClassName
+  ) {
+    try {
+      Map<String, Object> bindings = deserializeBindings(bindingsJson);
+      JT_LDV_Checkpoint__c checkpoint = JT_DataSelector.startCursorOperation(
+        devName,
+        bindings,
+        true,
+        batchSize,
+        processorClassName
+      );
+      System.enqueueJob(new JT_LdvCursorQueueable(checkpoint.Id));
+      return checkpoint.JT_OperationId__c;
+    } catch (Exception e) {
+      throw new AuraHandledException(e.getMessage());
+    }
+  }
+
+  /**
+   * @description Polls the current progress of a chained LDV operation started via
+   * startLdvBulkOperation.
+   * @author Jaime Terrats
+   * @param operationId The operation id returned by startLdvBulkOperation
+   * @return LdvOperationStatus Current checkpoint status/progress
+   **/
+  @AuraEnabled
+  public static LdvOperationStatus getLdvOperationStatus(String operationId) {
+    List<JT_LDV_Checkpoint__c> checkpoints = [
+      SELECT
+        JT_Status__c,
+        JT_CursorPosition__c,
+        JT_RecordsProcessed__c,
+        JT_TotalRecordCount__c,
+        JT_LastError__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_OperationId__c = :operationId
+      WITH USER_MODE
+      LIMIT 1
+    ];
+
+    if (checkpoints.isEmpty()) {
+      throw new AuraHandledException(
+        'No LDV operation found for the given operation id.'
+      );
+    }
+
+    JT_LDV_Checkpoint__c checkpoint = checkpoints[0];
+    LdvOperationStatus status = new LdvOperationStatus();
+    status.status = checkpoint.JT_Status__c;
+    status.recordsProcessed = (Integer) checkpoint.JT_RecordsProcessed__c;
+    status.totalRecordCount = (Integer) checkpoint.JT_TotalRecordCount__c;
+    status.lastError = checkpoint.JT_LastError__c;
+    return status;
+  }
+
+  /**
+   * @description Cooperatively cancels a chained LDV operation. The currently-executing chunk
+   * still finishes; the next chunk observes the Aborted status and stops the chain instead of
+   * re-enqueueing (see JT_LdvCursorQueueable).
+   * @author Jaime Terrats
+   * @param operationId The operation id returned by startLdvBulkOperation
+   **/
+  @AuraEnabled
+  public static void cancelLdvOperation(String operationId) {
+    List<JT_LDV_Checkpoint__c> checkpoints = [
+      SELECT Id, JT_Status__c
+      FROM JT_LDV_Checkpoint__c
+      WHERE JT_OperationId__c = :operationId
+      WITH USER_MODE
+      LIMIT 1
+    ];
+
+    if (checkpoints.isEmpty()) {
+      throw new AuraHandledException(
+        'No LDV operation found for the given operation id.'
+      );
+    }
+
+    JT_LDV_Checkpoint__c checkpoint = checkpoints[0];
+    if (
+      checkpoint.JT_Status__c == 'Completed' ||
+      checkpoint.JT_Status__c == 'Failed'
+    ) {
+      return;
+    }
+
+    checkpoint.JT_Status__c = 'Aborted';
+    Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+  }
+
+  /**
+   * @description Progress snapshot for a chained LDV operation, returned by
+   * getLdvOperationStatus.
+   **/
+  public class LdvOperationStatus {
+    @AuraEnabled
+    public String status;
+    @AuraEnabled
+    public Integer recordsProcessed;
+    @AuraEnabled
+    public Integer totalRecordCount;
+    @AuraEnabled
+    public String lastError;
+  }
+
+  /**
+   * @description One bounded page of query results, for GraphQL-style forward pagination
+   * instead of loading and slicing a full result set client-side.
+   **/
+  public class QueryPage {
+    @AuraEnabled
+    public List<Object> records;
+    @AuraEnabled
+    public Boolean hasNextPage;
+    @AuraEnabled
+    public String endCursor;
+    @AuraEnabled
+    public Integer totalRecordCount;
+  }
+
+  /**
+   * @description Fetches one bounded page of records via a real Database.Cursor. The cursor
+   * is bind-safe and re-opened fresh on every call (Database.Cursor cannot be persisted across
+   * separate Apex invocations) - endCursor is a plain row-offset token, not an opaque handle.
+   * @author Jaime Terrats
+   * @param devName Configuration developer name
+   * @param bindingsJson JSON string with bindings
+   * @param first Page size (default 10)
+   * @param after Opaque cursor from the previous page's endCursor, or null/blank for the first page
+   * @return QueryPage One page plus hasNextPage/endCursor/totalRecordCount
+   **/
+  @AuraEnabled
+  public static QueryPage getQueryResultsPage(
+    String devName,
+    String bindingsJson,
+    Integer first,
+    String after
+  ) {
+    try {
+      Map<String, Object> bindings = deserializeBindings(bindingsJson);
+      Integer position = String.isNotBlank(after) ? Integer.valueOf(after) : 0;
+
+      JT_DataSelector.QueryPageResult pageResult = JT_DataSelector.getRecordsPage(
+        devName,
+        bindings,
+        true,
+        position,
+        first
+      );
+
+      QueryPage page = new QueryPage();
+      page.records = serializeRecordsForLWC(pageResult.records);
+      page.hasNextPage = pageResult.hasNextPage;
+      page.endCursor = String.valueOf(pageResult.nextPosition);
+      page.totalRecordCount = pageResult.totalRecordCount;
+      return page;
+    } catch (Exception e) {
+      throw new AuraHandledException(e.getMessage());
     }
   }
 

@@ -27,21 +27,7 @@ function getSFSession() {
 
     // Get org info from SF CLI - uses active session
     // Force plain JSON output (no colors) with SF_USE_PROGRESS_BAR=false
-    // Configure SF CLI to write logs to a temporary directory to avoid permission errors
-    const os = require("os");
-    const path = require("path");
-    const tempLogDir = path.join(os.tmpdir(), "sf-cli-logs");
-
-    // Ensure temp directory exists (create if needed)
-    try {
-      const fs = require("fs");
-      if (!fs.existsSync(tempLogDir)) {
-        fs.mkdirSync(tempLogDir, { recursive: true });
-      }
-    } catch (e) {
-      // Ignore errors creating temp directory
-    }
-
+    // Disable SF CLI file logging to avoid EPERM writes to ~/.sf/*.log
     let orgInfoJson;
     const sfEnv = {
       ...process.env,
@@ -50,7 +36,11 @@ function getSFSession() {
       NO_COLOR: "1",
       FORCE_COLOR: "0",
       SF_LOG_LEVEL: "ERROR", // Only show errors, suppress info logs
-      SF_LOG_PATH: tempLogDir // Write logs to temp directory instead of ~/.sf
+      SF_DISABLE_LOG_FILE: "true",
+      SFDX_DISABLE_LOG_FILE: "true",
+      // Newer sf CLI versions redact accessToken from --json output by default, which breaks
+      // frontdoor.jsp session injection below - this test helper needs the real token.
+      SF_TEMP_SHOW_SECRETS: "true"
     };
 
     try {

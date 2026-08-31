@@ -192,6 +192,17 @@ public inherited sharing class JT_DataSelector {
   }
 
   /**
+   * @description Returns a configuration's base SOQL for callers outside this class that only
+   * need the query text - e.g. JT_LdvCursorQueueable re-opening a Database.Cursor for a chunk
+   * of a chained LDV operation it did not originally start.
+   * @param devName Configuration developer name
+   * @return String The configuration's JT_BaseQuery__c
+   */
+  public static String getBaseQuery(String devName) {
+    return JT_DataSelector.getInstance().getConfig(devName).JT_BaseQuery__c;
+  }
+
+  /**
    * @description instance method to get the config with caching optimization
    * @param devName
    * @author Jaime Terrats | 06-18-2025
@@ -988,8 +999,10 @@ public inherited sharing class JT_DataSelector {
   }
 
   /**
-   * @description Process large query results using Apex Cursors (Beta)
-   * Allows efficient processing of >50K records in batches
+   * @description Process large query results using a real Apex Database.Cursor,
+   * fetched in bounded chunks and tracked via a JT_LDV_Checkpoint__c row.
+   * Still invoked synchronously in a single transaction - multi-transaction chaining and
+   * resumption is handled separately by JT_LdvCursorQueueable.
    * @param params CursorProcessingParams object containing all parameters
    * @return Integer Total number of records processed
    * @see https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/langCon_apex_SOQL_cursors.htm
@@ -1015,28 +1028,207 @@ public inherited sharing class JT_DataSelector {
       ? params.batchSize
       : 200;
 
-    Integer totalProcessed = 0;
+    JT_LDV_Checkpoint__c checkpoint = new JT_LDV_Checkpoint__c(
+      JT_OperationId__c = generateOperationId(),
+      JT_ConfigDevName__c = params.devName,
+      JT_ChunkSize__c = effectiveBatchSize,
+      JT_CursorPosition__c = 0,
+      JT_RecordsProcessed__c = 0,
+      JT_Status__c = 'InProgress',
+      JT_InitiatedBy__c = UserInfo.getUserId(),
+      JT_StartedAt__c = System.now()
+    );
+    Database.insert(checkpoint, AccessLevel.SYSTEM_MODE);
 
-    List<SObject> allRecords = Database.queryWithBinds(
+    Integer totalProcessed = 0;
+    try {
+      Database.Cursor cursor = Database.getCursorWithBinds(
+        config.JT_BaseQuery__c,
+        mergedBindings,
+        accessMode
+      );
+      Integer totalSize = cursor.getNumRecords();
+      Integer position = 0;
+
+      while (position < totalSize) {
+        Integer fetchSize = Math.min(effectiveBatchSize, totalSize - position);
+        List<SObject> batch = cursor.fetch(position, fetchSize);
+        if (batch.isEmpty()) {
+          break;
+        }
+        params.processor.processBatch(batch);
+        totalProcessed += batch.size();
+        position += batch.size();
+      }
+
+      checkpoint.JT_Status__c = 'Completed';
+      checkpoint.JT_CursorPosition__c = position;
+      checkpoint.JT_RecordsProcessed__c = totalProcessed;
+      checkpoint.JT_TotalRecordCount__c = totalSize;
+      checkpoint.JT_CompletedAt__c = System.now();
+      Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+    } catch (Exception e) {
+      checkpoint.JT_Status__c = 'Failed';
+      checkpoint.JT_LastError__c = e.getTypeName() + ': ' + e.getMessage();
+      Database.update(checkpoint, AccessLevel.SYSTEM_MODE);
+      throw e;
+    }
+
+    return totalProcessed;
+  }
+
+  /**
+   * @description Starts a chained, multi-transaction LDV cursor operation.
+   * Persists a checkpoint and returns it WITHOUT fetching any records - JT_LdvCursorQueueable
+   * performs the actual chunked fetch/processing, one bounded chunk per transaction.
+   * @param devName Configuration developer name
+   * @param bindings Custom bindings
+   * @param enforceSecurity Whether chunks should query in USER_MODE (true) or SYSTEM_MODE (false)
+   * @param batchSize Bounded fetch size per chunk (default 200)
+   * @param processorTypeName Fully-qualified JT_DataSelector.CursorProcessor implementation with
+   * a public no-arg constructor - re-instantiated once per chunk since instances cannot be
+   * serialized across Queueable transactions
+   * @return JT_LDV_Checkpoint__c The persisted checkpoint (status Pending, position 0)
+   */
+  public static JT_LDV_Checkpoint__c startCursorOperation(
+    String devName,
+    Map<String, Object> bindings,
+    Boolean enforceSecurity,
+    Integer batchSize,
+    String processorTypeName
+  ) {
+    final JT_DataSelector selectorInstance = JT_DataSelector.getInstance();
+    final JT_DynamicQueryConfiguration__mdt config = selectorInstance.getConfig(
+      devName
+    );
+
+    Map<String, Object> configBindings = getConfigBindings(config);
+    Map<String, Object> mergedBindings = mergeBindings(
+      configBindings,
+      bindings
+    );
+
+    AccessLevel accessMode = getAccessLevel(enforceSecurity);
+    Integer effectiveBatchSize = batchSize != null &&
+      batchSize > 0
+      ? batchSize
+      : 200;
+
+    Database.Cursor cursor = Database.getCursorWithBinds(
       config.JT_BaseQuery__c,
       mergedBindings,
       accessMode
     );
+    Integer totalSize = cursor.getNumRecords();
 
-    for (Integer i = 0; i < allRecords.size(); i += effectiveBatchSize) {
-      List<SObject> batch = new List<SObject>();
-      for (
-        Integer j = i;
-        j < Math.min(i + effectiveBatchSize, allRecords.size());
-        j++
-      ) {
-        batch.add(allRecords[j]);
-      }
-      params.processor.processBatch(batch);
-      totalProcessed += batch.size();
-    }
+    Map<String, Object> persistedState = new Map<String, Object>{
+      'bindings' => mergedBindings,
+      'enforceSecurity' => enforceSecurity
+    };
 
-    return totalProcessed;
+    JT_LDV_Checkpoint__c checkpoint = new JT_LDV_Checkpoint__c(
+      JT_OperationId__c = generateOperationId(),
+      JT_ConfigDevName__c = devName,
+      JT_BindingsJson__c = JSON.serialize(persistedState),
+      JT_ChunkSize__c = effectiveBatchSize,
+      JT_CursorPosition__c = 0,
+      JT_RecordsProcessed__c = 0,
+      JT_TotalRecordCount__c = totalSize,
+      JT_Status__c = 'Pending',
+      JT_RetryCount__c = 0,
+      JT_MaxRetries__c = 3,
+      JT_ProcessorClass__c = processorTypeName,
+      JT_InitiatedBy__c = UserInfo.getUserId(),
+      JT_StartedAt__c = System.now()
+    );
+    Database.insert(checkpoint, AccessLevel.SYSTEM_MODE);
+    return checkpoint;
+  }
+
+  /**
+   * @description One bounded page of a real Database.Cursor, for forward pagination
+   * ({first, after, hasNextPage, endCursor}) instead of loading a full result set client-side.
+   */
+  public class QueryPageResult {
+    public List<SObject> records;
+    public Boolean hasNextPage;
+    public Integer nextPosition;
+    public Integer totalRecordCount;
+  }
+
+  /**
+   * @description Fetches one bounded page via a real Database.Cursor - the query is re-opened
+   * fresh on every call (a Database.Cursor cannot be persisted across separate Apex
+   * invocations), then bounded to exactly [position, position + pageSize).
+   * @param devName Configuration developer name
+   * @param bindings Custom bindings
+   * @param enforceSecurity Whether to use USER_MODE
+   * @param position Row offset to start this page at (0 for the first page)
+   * @param pageSize Bounded page size (default 10)
+   * @return QueryPageResult One page plus pagination metadata
+   */
+  public static QueryPageResult getRecordsPage(
+    String devName,
+    Map<String, Object> bindings,
+    Boolean enforceSecurity,
+    Integer position,
+    Integer pageSize
+  ) {
+    final JT_DataSelector selectorInstance = JT_DataSelector.getInstance();
+    final JT_DynamicQueryConfiguration__mdt config = selectorInstance.getConfig(
+      devName
+    );
+
+    Map<String, Object> configBindings = getConfigBindings(config);
+    Map<String, Object> mergedBindings = mergeBindings(
+      configBindings,
+      bindings
+    );
+    AccessLevel accessMode = getAccessLevel(enforceSecurity);
+
+    Integer effectivePosition = position != null && position > 0 ? position : 0;
+    Integer effectivePageSize = pageSize != null &&
+      pageSize > 0
+      ? pageSize
+      : 10;
+
+    Database.Cursor cursor = Database.getCursorWithBinds(
+      config.JT_BaseQuery__c,
+      mergedBindings,
+      accessMode
+    );
+    Integer totalSize = cursor.getNumRecords();
+    Integer fetchSize = Math.min(
+      effectivePageSize,
+      Math.max(0, totalSize - effectivePosition)
+    );
+
+    QueryPageResult result = new QueryPageResult();
+    result.records = fetchSize > 0
+      ? cursor.fetch(effectivePosition, fetchSize)
+      : new List<SObject>();
+    result.nextPosition = effectivePosition + result.records.size();
+    result.hasNextPage = result.nextPosition < totalSize;
+    result.totalRecordCount = totalSize;
+    return result;
+  }
+
+  /**
+   * @description Generates a UUID-v4-shaped operation id for JT_LDV_Checkpoint__c.JT_OperationId__c.
+   * @return String 36-character hex-and-hyphen identifier
+   */
+  @TestVisible
+  private static String generateOperationId() {
+    String hex = EncodingUtil.convertToHex(Crypto.generateAesKey(128));
+    return hex.substring(0, 8) +
+      '-' +
+      hex.substring(8, 12) +
+      '-' +
+      hex.substring(12, 16) +
+      '-' +
+      hex.substring(16, 20) +
+      '-' +
+      hex.substring(20);
   }
 
   /**
@@ -1454,49 +1646,13 @@ public inherited sharing class JT_DataSelector {
     // Use appropriate access level
     AccessLevel accessMode = getAccessLevel(enforceSecurity);
 
-    // Replace bind variables in the query string for Database.countQuery()
-    // Database.countQuery() doesn't support bindings, so we must replace them with literal values
-    String finalQuery = countQuery;
-    if (filteredBindings != null && !filteredBindings.isEmpty()) {
-      for (String key : filteredBindings.keySet()) {
-        Object value = filteredBindings.get(key);
-        String replacement = '';
-
-        if (value instanceof String) {
-          replacement = '\'' + String.escapeSingleQuotes((String) value) + '\'';
-        } else if (value instanceof Date) {
-          replacement = String.valueOf((Date) value);
-        } else if (value instanceof Datetime) {
-          replacement = ((Datetime) value)
-            .format('yyyy-MM-dd\'T\'HH:mm:ss\'Z\'');
-        } else if (
-          value instanceof Boolean ||
-          value instanceof Integer ||
-          value instanceof Decimal
-        ) {
-          replacement = String.valueOf(value);
-        } else if (value instanceof List<Object>) {
-          List<Object> listValue = (List<Object>) value;
-          List<String> escapedValues = new List<String>();
-          for (Object item : listValue) {
-            if (item instanceof String) {
-              escapedValues.add(
-                '\'' + String.escapeSingleQuotes((String) item) + '\''
-              );
-            } else {
-              escapedValues.add(String.valueOf(item));
-            }
-          }
-          replacement = '(' + String.join(escapedValues, ',') + ')';
-        } else {
-          replacement = String.valueOf(value);
-        }
-
-        finalQuery = finalQuery.replaceAll(':' + key + '\\b', replacement);
-      }
-    }
-
-    return Database.countQuery(finalQuery, accessMode);
+    // Bind-safe: Database.countQueryWithBinds accepts the bind map directly, the same way
+    // Database.queryWithBinds already works elsewhere in this class - no literal interpolation.
+    return Database.countQueryWithBinds(
+      countQuery,
+      filteredBindings,
+      accessMode
+    );
   }
 
   /**
@@ -1535,7 +1691,9 @@ public inherited sharing class JT_DataSelector {
       ? threshold
       : 50000;
 
-    // Step 1: Count records
+    // Step 1: Count records. A COUNT failure is evidence the query may be expensive or
+    // unselective - it must never fall through to an unbounded getRecords() call. The caller
+    // is required to handle JT_LdvRiskAssessmentException explicitly.
     Integer recordCount;
     try {
       recordCount = countRecordsInternal(
@@ -1544,8 +1702,12 @@ public inherited sharing class JT_DataSelector {
         enforceSecurity
       );
     } catch (Exception e) {
-      // If COUNT fails, fall back to standard query
-      return getRecords(devName, enforceSecurity, mergedBindings);
+      throw new JT_LdvRiskAssessmentException(
+        'Unable to assess record count/risk for "' +
+          devName +
+          '": ' +
+          e.getMessage()
+      );
     }
 
     // Step 2: Decide strategy based on count

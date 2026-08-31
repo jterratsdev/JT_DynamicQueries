@@ -17,6 +17,10 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>JT_LdvCheckpointPurgeBatch</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>JT_MetadataCreator</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -58,6 +62,76 @@
     </customMetadataTypeAccesses>
     <description
   >Grants full access to JT Dynamic Queries framework: all Apex classes, Custom Objects, Tabs, and Lightning Application.</description>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_BindingsJson__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_ChunkSize__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_CompletedAt__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_CursorPosition__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_InitiatedBy__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_LastCheckpointAt__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_LastError__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_MaxRetries__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_ProcessorClass__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_QueueableJobId__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_RecordsProcessed__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_RetryCount__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_StartedAt__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>JT_LDV_Checkpoint__c.JT_TotalRecordCount__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
     <fieldPermissions>
         <editable>true</editable>
         <field>JT_RunAsTest_Execution__c.Apex_Queueable_Job_Id__c</field>
@@ -105,6 +179,16 @@
     </fieldPermissions>
     <hasActivationRequired>false</hasActivationRequired>
     <label>JT Dynamic Queries</label>
+    <objectPermissions>
+        <allowCreate>true</allowCreate>
+        <allowDelete>true</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>true</modifyAllRecords>
+        <object>JT_LDV_Checkpoint__c</object>
+        <viewAllFields>false</viewAllFields>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>

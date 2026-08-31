@@ -6,6 +6,10 @@ const { defineConfig, devices } = require("@playwright/test");
 module.exports = defineConfig({
   testDir: "./tests/e2e",
 
+  /* Seeds fixture data (e.g. Customer 360 Account + Contact/Opportunity/Case) so specs are
+     self-contained and don't depend on ambient data in whichever org they run against. */
+  globalSetup: require.resolve("./tests/e2e/global-setup.js"),
+
   /* Run tests in files in parallel */
   fullyParallel: false,
 
